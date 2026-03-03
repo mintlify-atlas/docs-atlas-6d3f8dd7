@@ -1,0 +1,512 @@
+---
+title: Metrics Reference
+description: Comprehensive explanation of all metrics collected during benchmarking
+---
+
+The benchmarking system collects a wide range of metrics across different aspects of the vital signs monitoring pipeline. This reference explains each metric and how to interpret the results.
+
+## ROI Performance Metrics
+
+These metrics measure the face detection component's speed and efficiency.
+
+### Detection Time Metrics
+
+<ParamField path="avg_detection_time_ms" type="float">
+  Average time to detect a face in a single frame, measured in milliseconds.
+  
+  **Typical values:**
+  - MediaPipe: 5-10 ms
+  - Haar Cascade: 2-5 ms
+  - MTCNN: 15-30 ms
+  - YOLOv11: 8-15 ms
+  
+  Lower is better.
+</ParamField>
+
+<ParamField path="std_detection_time_ms" type="float">
+  Standard deviation of detection times. Measures consistency.
+  
+  Lower values indicate more predictable performance.
+</ParamField>
+
+<ParamField path="median_detection_time_ms" type="float">
+  Median detection time. More robust to outliers than average.
+</ParamField>
+
+<ParamField path="max_detection_time_ms" type="float">
+  Worst-case detection time. Important for real-time requirements.
+</ParamField>
+
+<ParamField path="min_detection_time_ms" type="float">
+  Best-case detection time.
+</ParamField>
+
+### Throughput Metrics
+
+<ParamField path="detection_fps" type="float">
+  Frames per second that can be processed by the face detector.
+  
+  Calculated as: `1000 / avg_detection_time_ms`
+  
+  **Typical values:**
+  - Desktop: 100-400 FPS
+  - Raspberry Pi 4: 20-80 FPS
+  
+  Higher is better.
+</ParamField>
+
+<ParamField path="total_frames" type="int">
+  Total number of frames processed during the benchmark.
+</ParamField>
+
+## EVM Performance Metrics
+
+These metrics measure the Eulerian Video Magnification processing efficiency.
+
+### Chunk Processing Metrics
+
+<ParamField path="total_chunks" type="int">
+  Number of frame chunks processed.
+  
+  Each chunk contains `BUFFER_SIZE` frames (typically 200).
+</ParamField>
+
+<ParamField path="avg_chunk_time_s" type="float">
+  Average time to process one chunk of frames, in seconds.
+  
+  **Typical values:**
+  - Desktop: 0.5-1.5 seconds
+  - Raspberry Pi 4: 2-5 seconds
+  
+  This is the time for the EVM algorithm to process all frames in the buffer.
+</ParamField>
+
+<ParamField path="std_chunk_time_s" type="float">
+  Standard deviation of chunk processing times.
+</ParamField>
+
+<ParamField path="median_chunk_time_s" type="float">
+  Median chunk processing time.
+</ParamField>
+
+### Per-Frame EVM Metrics
+
+<ParamField path="avg_time_per_frame_ms" type="float">
+  Average EVM processing time per frame within a chunk.
+  
+  Calculated as: `(avg_chunk_time_s * 1000) / buffer_size`
+  
+  **Typical values:**
+  - Desktop: 2-7 ms per frame
+  - Raspberry Pi 4: 10-25 ms per frame
+</ParamField>
+
+<ParamField path="evm_fps" type="float">
+  Equivalent FPS if processing frames sequentially through EVM.
+  
+  Calculated as: `1000 / avg_time_per_frame_ms`
+  
+  Note: This is theoretical - EVM processes chunks, not individual frames.
+</ParamField>
+
+## End-to-End Performance Metrics
+
+These metrics measure the complete pipeline from video input to heart rate output.
+
+<ParamField path="end_to_end_fps" type="float">
+  Overall system throughput in frames per second.
+  
+  Includes both ROI detection and EVM processing time.
+  
+  **Typical values:**
+  - Desktop (MediaPipe): 100-150 FPS
+  - Desktop (Haar): 150-250 FPS
+  - Raspberry Pi 4: 15-40 FPS
+</ParamField>
+
+<ParamField path="detection_time_percentage" type="float">
+  Percentage of total time spent on ROI detection.
+  
+  **Typical values:** 40-60%
+  
+  Higher percentages indicate ROI detection is the bottleneck.
+</ParamField>
+
+<ParamField path="evm_time_percentage" type="float">
+  Percentage of total time spent on EVM processing.
+  
+  **Typical values:** 40-60%
+  
+  Complement of detection_time_percentage.
+</ParamField>
+
+### Example Time Breakdown
+
+```json
+{
+  "end_to_end_performance": {
+    "avg_chunk_time_s": 1.777,
+    "end_to_end_fps": 123.7,
+    "detection_time_percentage": 58.9,
+    "evm_time_percentage": 41.1
+  }
+}
+```
+
+Interpretation: ROI detection takes ~59% of processing time, making it the primary bottleneck.
+
+## ROI Quality Metrics
+
+These metrics assess the reliability and stability of face detection.
+
+### Detection Reliability
+
+<ParamField path="detection_rate_percent" type="float">
+  Percentage of frames where a face was successfully detected.
+  
+  **Target:** >95% for reliable operation
+  
+  Lower values indicate the detector struggles with the video conditions.
+</ParamField>
+
+<ParamField path="successful_detections" type="int">
+  Number of frames with successful face detection.
+</ParamField>
+
+<ParamField path="failed_detections" type="int">
+  Number of frames where face detection failed.
+</ParamField>
+
+### Stability Metrics
+
+<ParamField path="jitter_avg_pixels" type="float">
+  Average spatial movement of ROI center between consecutive frames.
+  
+  Measured in pixels. Lower is better.
+  
+  **Typical values:**
+  - Stable detectors: 0-2 pixels
+  - Jittery detectors: 5+ pixels
+  
+  High jitter can affect EVM quality.
+</ParamField>
+
+<ParamField path="roi_width_std" type="float">
+  Standard deviation of ROI width across frames.
+  
+  Lower values indicate more consistent sizing.
+</ParamField>
+
+<ParamField path="roi_height_std" type="float">
+  Standard deviation of ROI height across frames.
+</ParamField>
+
+### Failure Pattern Metrics
+
+<ParamField path="max_consecutive_failures" type="int">
+  Maximum number of consecutive frames where detection failed.
+  
+  **Concern threshold:** >10 frames
+  
+  Long failure sequences interrupt measurements.
+</ParamField>
+
+<ParamField path="avg_consecutive_failures" type="float">
+  Average length of failure sequences.
+</ParamField>
+
+<ParamField path="num_failure_episodes" type="int">
+  Number of separate failure sequences.
+  
+  Many short failures vs. few long failures indicate different issues.
+</ParamField>
+
+## Heart Rate Accuracy Metrics
+
+These metrics compare predicted heart rates against ground truth from the pulse oximeter.
+
+### Error Metrics
+
+<ParamField path="mae_bpm" type="float">
+  Mean Absolute Error in beats per minute.
+  
+  Average of `|predicted_hr - true_hr|` across all measurements.
+  
+  **Performance levels:**
+  - Excellent: Less than 5 BPM
+  - Good: 5-10 BPM
+  - Acceptable: 10-15 BPM
+  - Poor: Greater than 15 BPM
+</ParamField>
+
+<ParamField path="me_bpm" type="float">
+  Mean Error (signed) in BPM.
+  
+  Shows systematic bias:
+  - Positive: Tends to over-predict
+  - Negative: Tends to under-predict
+  - Near zero: Unbiased
+</ParamField>
+
+<ParamField path="rmse_bpm" type="float">
+  Root Mean Square Error in BPM.
+  
+  Calculated as: `sqrt(mean(errors^2))`
+  
+  Penalizes large errors more than MAE.
+</ParamField>
+
+<ParamField path="std_error_bpm" type="float">
+  Standard deviation of errors.
+  
+  Measures prediction consistency.
+</ParamField>
+
+<ParamField path="max_error_bpm" type="float">
+  Maximum absolute error encountered.
+</ParamField>
+
+<ParamField path="min_error_bpm" type="float">
+  Minimum absolute error encountered.
+</ParamField>
+
+### Accuracy Within Thresholds
+
+<ParamField path="within_5bpm_percent" type="float">
+  Percentage of predictions within 5 BPM of ground truth.
+  
+  **Target:** >70% for clinical applications
+</ParamField>
+
+<ParamField path="within_10bpm_percent" type="float">
+  Percentage of predictions within 10 BPM of ground truth.
+  
+  **Target:** >85%
+</ParamField>
+
+<ParamField path="within_15bpm_percent" type="float">
+  Percentage of predictions within 15 BPM of ground truth.
+  
+  **Target:** >95%
+</ParamField>
+
+### Statistical Metrics
+
+<ParamField path="correlation" type="float">
+  Pearson correlation coefficient between predictions and ground truth.
+  
+  Range: -1 to 1
+  - 1.0: Perfect positive correlation
+  - 0.0: No correlation
+  - -1.0: Perfect negative correlation
+  
+  **Target:** >0.8
+</ParamField>
+
+<ParamField path="hr_pred_min" type="float">
+  Minimum predicted heart rate value.
+</ParamField>
+
+<ParamField path="hr_pred_max" type="float">
+  Maximum predicted heart rate value.
+</ParamField>
+
+<ParamField path="hr_true_min" type="float">
+  Minimum ground truth heart rate value.
+</ParamField>
+
+<ParamField path="hr_true_max" type="float">
+  Maximum ground truth heart rate value.
+</ParamField>
+
+## System Resource Metrics
+
+These metrics monitor hardware utilization, critical for embedded deployment on Raspberry Pi 4.
+
+### CPU Metrics
+
+<ParamField path="cpu_usage_avg_percent" type="float">
+  Average CPU utilization during processing.
+  
+  **Raspberry Pi 4:** 40-80% typical
+</ParamField>
+
+<ParamField path="cpu_usage_max_percent" type="float">
+  Peak CPU utilization.
+</ParamField>
+
+<ParamField path="cpu_freq_avg_mhz" type="float">
+  Average CPU frequency in MHz.
+  
+  **Raspberry Pi 4:** 1500 MHz (normal), less than 1500 MHz indicates throttling
+</ParamField>
+
+<ParamField path="cpu_freq_min_mhz" type="float">
+  Minimum CPU frequency observed.
+  
+  Significantly below max indicates throttling occurred.
+</ParamField>
+
+<ParamField path="potential_throttling" type="boolean">
+  True if CPU frequency variance suggests throttling.
+  
+  Triggered when `cpu_freq_std_mhz > 100`
+</ParamField>
+
+### Memory Metrics
+
+<ParamField path="memory_usage_avg_percent" type="float">
+  Average memory utilization.
+</ParamField>
+
+<ParamField path="memory_usage_max_percent" type="float">
+  Peak memory utilization.
+  
+  **Watch for:** >85% on Raspberry Pi 4
+</ParamField>
+
+### Temperature Metrics
+
+<ParamField path="temperature_avg_celsius" type="float">
+  Average CPU temperature in Celsius.
+  
+  **Raspberry Pi 4:**
+  - Normal: Below 70°C
+  - Warm: 70-75°C
+  - Hot: 75-80°C
+  - Throttling: Above 80°C
+</ParamField>
+
+<ParamField path="temperature_max_celsius" type="float">
+  Peak temperature observed.
+</ParamField>
+
+<ParamField path="temperature_warning" type="boolean">
+  True if temperature exceeded 75°C.
+</ParamField>
+
+<ParamField path="temperature_critical" type="boolean">
+  True if temperature exceeded 80°C.
+  
+  At this point, Raspberry Pi 4 throttles CPU to protect hardware.
+</ParamField>
+
+## Example Results Structure
+
+Here's a complete example of metrics from a single video:
+
+```json
+{
+  "subject_id": "subject1",
+  "subject_num": 1,
+  "video_path": "/dataset/subject1/vid.mp4",
+  "video_fps": 30.0,
+  "buffer_size": 200,
+  "model_type": "mediapipe",
+  
+  "roi_performance": {
+    "total_frames": 3240,
+    "avg_detection_time_ms": 5.15,
+    "std_detection_time_ms": 0.82,
+    "median_detection_time_ms": 5.02,
+    "max_detection_time_ms": 12.3,
+    "min_detection_time_ms": 3.8,
+    "detection_fps": 194.2
+  },
+  
+  "evm_performance": {
+    "total_chunks": 16,
+    "avg_chunk_time_s": 0.787,
+    "std_chunk_time_s": 0.053,
+    "median_chunk_time_s": 0.781,
+    "max_chunk_time_s": 0.892,
+    "min_chunk_time_s": 0.723,
+    "avg_time_per_frame_ms": 3.93,
+    "evm_fps": 254.1
+  },
+  
+  "end_to_end_performance": {
+    "avg_chunk_time_s": 1.774,
+    "end_to_end_fps": 112.6,
+    "detection_time_percentage": 58.2,
+    "evm_time_percentage": 41.8
+  },
+  
+  "roi_quality": {
+    "detection_rate_percent": 100.0,
+    "successful_detections": 3240,
+    "failed_detections": 0,
+    "jitter_avg_pixels": 0.006,
+    "roi_width_std": 0.47,
+    "roi_height_std": 0.47,
+    "max_consecutive_failures": 0,
+    "avg_consecutive_failures": 0,
+    "num_failure_episodes": 0
+  },
+  
+  "hr_accuracy": {
+    "num_measurements": 16,
+    "mae_bpm": 8.42,
+    "me_bpm": -3.21,
+    "rmse_bpm": 10.15,
+    "std_error_bpm": 6.73,
+    "max_error_bpm": 18.5,
+    "min_error_bpm": 1.2,
+    "within_5bpm_percent": 56.25,
+    "within_10bpm_percent": 75.0,
+    "within_15bpm_percent": 93.75,
+    "correlation": 0.847,
+    "hr_pred_min": 62.3,
+    "hr_pred_max": 89.7,
+    "hr_true_min": 64.8,
+    "hr_true_max": 92.1
+  },
+  
+  "system_resources": {
+    "cpu_usage_avg_percent": 1.42,
+    "cpu_usage_max_percent": 15.8,
+    "memory_usage_avg_percent": 59.3,
+    "memory_usage_max_percent": 60.2,
+    "cpu_freq_avg_mhz": 2496.0,
+    "cpu_freq_min_mhz": 2496.0,
+    "cpu_freq_max_mhz": 2496.0,
+    "potential_throttling": false,
+    "temperature_avg_celsius": 42.5,
+    "temperature_max_celsius": 46.8,
+    "temperature_warning": false,
+    "temperature_critical": false
+  }
+}
+```
+
+## Interpreting Results
+
+<AccordionGroup>
+  <Accordion title="Good Performance Indicators">
+    - `detection_rate_percent` > 95%
+    - `mae_bpm` < 10
+    - `within_10bpm_percent` > 85%
+    - `correlation` > 0.8
+    - `jitter_avg_pixels` < 2.0
+    - No temperature warnings
+  </Accordion>
+  
+  <Accordion title="Performance Bottlenecks">
+    - `detection_time_percentage` > 70% - ROI detection is bottleneck, try faster detector
+    - `evm_time_percentage` > 70% - EVM processing is bottleneck, reduce buffer size
+    - `potential_throttling` = true - CPU overheating, improve cooling
+  </Accordion>
+  
+  <Accordion title="Accuracy Issues">
+    - High `mae_bpm` but low `jitter` - EVM parameters may need tuning
+    - High `mae_bpm` and high `jitter` - ROI stability is affecting accuracy
+    - Negative `me_bpm` - Systematic under-prediction, check frequency range
+    - Positive `me_bpm` - Systematic over-prediction, check noise filtering
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Card title="Learn About the Dataset" icon="database" href="/benchmarking/dataset">
+  Understand the UBFC-RPPG dataset structure and ground truth data
+</Card>

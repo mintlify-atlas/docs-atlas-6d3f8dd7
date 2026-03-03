@@ -1,0 +1,342 @@
+---
+title: YOLODetector
+description: YOLO-based face detector supporting YOLOv8 and YOLOv12 models with high accuracy
+---
+
+## Overview
+
+The `YOLODetector` class uses Ultralytics YOLO implementation for face detection. It supports both predefined model presets (YOLOv8n, YOLOv12n) and custom model paths.
+
+## Initialization
+
+```python
+from src.face_detector.yolo_detector import YOLODetector
+
+# Using preset model
+detector = YOLODetector(preset='yolov8n', confidence=0.5)
+
+# Using custom model path
+detector = YOLODetector(model_path='path/to/model.pt', confidence=0.6)
+```
+
+<ParamField path="preset" type="str">
+  Name of predefined YOLO model from `YOLO_MODELS` config.
+  
+  Available presets:
+  - `"yolov8n"` - YOLOv8 nano model (faster)
+  - `"yolov12n"` - YOLOv12 nano model (more accurate)
+  
+  Either `preset` or `model_path` must be provided.
+</ParamField>
+
+<ParamField path="model_path" type="str">
+  Path to custom YOLO model weights (.pt file).
+  
+  Use this to load your own trained YOLO face detection model.
+  Either `preset` or `model_path` must be provided.
+</ParamField>
+
+<ParamField path="confidence" type="float" default="0.5">
+  Minimum confidence threshold (0-1) for valid detections.
+  
+  Detections below this confidence will be rejected.
+</ParamField>
+
+## Attributes
+
+<ResponseField name="model" type="YOLO">
+  Ultralytics YOLO model instance loaded from preset or custom path.
+</ResponseField>
+
+<ResponseField name="confidence" type="float">
+  Minimum confidence threshold for detections (0-1 range).
+</ResponseField>
+
+## Methods
+
+### detect()
+
+Detects a face in the given frame using YOLO.
+
+```python
+roi = detector.detect(frame)
+if roi:
+    x, y, width, height = roi
+    face = frame[y:y+height, x:x+width]
+```
+
+<ParamField path="frame" type="numpy.ndarray" required>
+  Input image in BGR or RGB format.
+</ParamField>
+
+<ResponseField name="return" type="tuple | None">
+  Bounding box as `(x, y, width, height)` in pixels, or None if no valid detection meets confidence threshold.
+  
+  Returns the highest confidence detection that exceeds the threshold.
+  - `x`: X-coordinate of top-left corner
+  - `y`: Y-coordinate of top-left corner
+  - `width`: Width of bounding box
+  - `height`: Height of bounding box
+  
+  Note: YOLO internally uses XYXY format, but this is converted to XYWH.
+</ResponseField>
+
+### close()
+
+Cleanup method (no actual cleanup needed for YOLO).
+
+```python
+detector.close()
+```
+
+## Model Configuration
+
+YOLO models are configured in `src/config.py`:
+
+```python
+YOLO_MODELS = {
+    "yolov8n": "src/weights_models/yolov8n-face.pt",
+    "yolov12n": "src/weights_models/yolov12n-face.pt"
+}
+```
+
+### Model Files
+
+Model weights should be placed in:
+- `src/weights_models/yolov8n-face.pt` - YOLOv8 nano face detection
+- `src/weights_models/yolov12n-face.pt` - YOLOv12 nano face detection
+
+## Usage Examples
+
+### Using YOLOv8 Preset
+
+```python
+import cv2
+from src.face_detector.yolo_detector import YOLODetector
+
+# Initialize with YOLOv8 nano preset
+detector = YOLODetector(preset='yolov8n', confidence=0.5)
+
+frame = cv2.imread('image.jpg')
+roi = detector.detect(frame)
+
+if roi:
+    x, y, w, h = roi
+    print(f"Face detected at ({x}, {y}) with size {w}x{h}")
+    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+    cv2.imshow('YOLO Detection', frame)
+    cv2.waitKey(0)
+
+detector.close()
+```
+
+### Using YOLOv12 for Higher Accuracy
+
+```python
+from src.face_detector.yolo_detector import YOLODetector
+
+# YOLOv12 provides better accuracy
+detector = YOLODetector(preset='yolov12n', confidence=0.6)
+roi = detector.detect(frame)
+```
+
+### Custom Model Path
+
+```python
+from src.face_detector.yolo_detector import YOLODetector
+
+# Load custom trained model
+detector = YOLODetector(
+    model_path='models/custom_yolo_face.pt',
+    confidence=0.7
+)
+
+roi = detector.detect(frame)
+```
+
+### With FaceDetector Manager
+
+Recommended usage through the unified manager:
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Using preset
+detector = FaceDetector(
+    model_type='yolo',
+    preset='yolov8n',
+    confidence=0.5
+)
+
+roi = detector.detect_face(frame)  # Includes stabilization
+detector.close()
+```
+
+### Complete Example with Video
+
+```python
+import cv2
+from src.face_detector.yolo_detector import YOLODetector
+
+detector = YOLODetector(preset='yolov8n', confidence=0.6)
+cap = cv2.VideoCapture(0)
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        roi = detector.detect(frame)
+        
+        if roi:
+            x, y, w, h = roi
+            # Draw bounding box
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.putText(frame, f'Confidence: {detector.confidence}', 
+                       (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.5, (0, 255, 0), 2)
+        
+        cv2.imshow('YOLO Face Detection', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    cap.release()
+    detector.close()
+    cv2.destroyAllWindows()
+```
+
+### Benchmarking Example
+
+From `experiments/advance_run_complete.py`:
+
+```python
+from src.face_detector.manager import FaceDetector
+
+MODEL_TYPE = 'yolo'
+YOLO_MODEL = 'yolov8n'
+
+# Initialize for benchmarking
+if MODEL_TYPE == 'yolo' and YOLO_MODEL:
+    face_detector = FaceDetector(
+        model_type=MODEL_TYPE, 
+        preset=YOLO_MODEL
+    )
+else:
+    face_detector = FaceDetector(model_type=MODEL_TYPE)
+
+# Process frames
+for frame in video_frames:
+    roi = face_detector.detect_face(frame)
+    # ... process ROI
+
+face_detector.close()
+```
+
+## Performance Characteristics
+
+### Speed
+- **Average FPS**: ~15 FPS (moderate speed)
+- **Detection Time**: ~65ms per frame on typical hardware
+- **Real-time capable**: Yes, but slower than MediaPipe/Haar
+
+### Accuracy
+- **Model Quality**: Excellent detection accuracy
+- **False Positives**: Very low with proper confidence threshold
+- **Robustness**: Works well in challenging conditions
+- **YOLOv12 vs YOLOv8**: v12 offers slightly better accuracy
+
+### Resource Usage
+- **CPU Usage**: Moderate to high
+- **Memory**: Higher than MediaPipe/Haar
+- **GPU**: Can leverage GPU if available (faster)
+
+## Implementation Details
+
+### Highest Confidence Selection
+
+When multiple faces are detected, only the highest confidence one is returned:
+
+```python
+boxes = results[0].boxes
+if len(boxes) == 0:
+    return None
+
+# Take highest confidence detection
+best_box = max(boxes, key=lambda b: b.conf[0])
+
+if best_box.conf[0] < self.confidence:
+    return None
+```
+
+### Coordinate Format Conversion
+
+YOLO returns XYXY format (top-left and bottom-right corners), which is converted to XYWH:
+
+```python
+x1, y1, x2, y2 = best_box.xyxy[0].cpu().numpy()
+return (int(x1), int(y1), int(x2 - x1), int(y2 - y1))
+```
+
+### Verbose Mode Disabled
+
+Detection runs in silent mode to avoid console spam:
+
+```python
+results = self.model(frame, verbose=False)
+```
+
+## Error Handling
+
+### Invalid Preset
+
+```python
+try:
+    detector = YOLODetector(preset='invalid_model')
+except ValueError as e:
+    print(f"Error: {e}")
+    # Output: Unknown YOLO preset 'invalid_model'. 
+    # Available: ['yolov8n', 'yolov12n']
+```
+
+### Missing Parameters
+
+```python
+try:
+    detector = YOLODetector()  # Neither preset nor model_path
+except ValueError as e:
+    print(f"Error: {e}")
+    # Output: You must provide either 'preset' or 'model_path'.
+```
+
+## Model Selection Guide
+
+### Use YOLOv8n when:
+- You need good accuracy with moderate speed
+- Processing pre-recorded videos
+- GPU acceleration available
+- Lower latency preferred over maximum accuracy
+
+### Use YOLOv12n when:
+- Maximum accuracy is critical
+- Processing challenging lighting/angles
+- Can accept slightly slower processing
+- Need lowest false positive rate
+
+## Comparison with Other Detectors
+
+| Feature | YOLO | MediaPipe | Haar | MTCNN |
+|---------|------|-----------|------|-------|
+| Speed | Moderate (~15 FPS) | Fast (~25 FPS) | Fastest (~30+ FPS) | Slow (~10 FPS) |
+| Accuracy | Excellent | Very Good | Good | Excellent |
+| GPU Support | Yes | Limited | No | Limited |
+| Model Size | Medium | Small | Tiny | Large |
+| Best For | High accuracy | Balanced | Low-power | Max accuracy |
+
+<Tip>
+  Use YOLO when you need excellent accuracy and have sufficient computational resources. For real-time applications with limited hardware, consider MediaPipe instead.
+</Tip>
+
+<Note>
+  The detector automatically handles YOLO's XYXY coordinate format and converts it to the standard XYWH format for consistency with other detectors.
+</Note>

@@ -1,0 +1,179 @@
+---
+title: Benchmarking Overview
+description: Comprehensive performance and accuracy testing system for the EVM Vital Signs Monitor
+---
+
+The EVM Vital Signs Monitor includes a sophisticated benchmarking system designed to measure both performance and accuracy across different hardware platforms and face detection models.
+
+## What the Benchmarking System Measures
+
+The benchmarking framework evaluates three critical aspects of the vital signs monitoring pipeline:
+
+### 1. ROI Detection Performance
+
+Measures the face detection component's speed and reliability:
+- Detection time per frame
+- Detection success rate
+- ROI stability (jitter and size variance)
+- Consecutive failure tracking
+- Real-time FPS capability
+
+### 2. EVM Processing Performance
+
+Evaluates the Eulerian Video Magnification processing efficiency:
+- Chunk processing time
+- Time per frame within chunks
+- Processing throughput (EVM FPS)
+- Buffer size impact on performance
+
+### 3. Heart Rate Accuracy
+
+Compares predictions against ground truth from the UBFC-RPPG dataset:
+- Mean Absolute Error (MAE)
+- Root Mean Square Error (RMSE)
+- Correlation coefficients
+- Accuracy within thresholds (5, 10, 15 BPM)
+- Error distribution statistics
+
+## Three Benchmark Types
+
+The system provides three specialized benchmarking scripts, each focusing on different aspects of the pipeline:
+
+<CardGroup cols={3}>
+  <Card title="ROI Benchmark" icon="crosshairs" href="/benchmarking/running-benchmarks#roi-only-benchmark">
+    Tests only the face detection component in isolation
+  </Card>
+  <Card title="EVM Benchmark" icon="wave-pulse" href="/benchmarking/running-benchmarks#evm-only-benchmark">
+    Tests EVM processing with pre-detected ROIs
+  </Card>
+  <Card title="Complete Benchmark" icon="chart-line" href="/benchmarking/running-benchmarks#complete-benchmark">
+    Tests the entire end-to-end pipeline
+  </Card>
+</CardGroup>
+
+### ROI-Only Benchmark (`advance_run_ROI.py`)
+
+Focuses exclusively on face detection performance across different models:
+- Supports: Haar Cascade, MediaPipe, MTCNN, YOLOv11
+- Measures detection speed, stability, and reliability
+- No EVM processing overhead
+- Ideal for comparing detector models
+
+### EVM-Only Benchmark (`advance_run_EVM.py`)
+
+Isolates EVM processing performance:
+- Assumes successful ROI detection
+- Measures pure EVM computation time
+- Evaluates heart rate prediction accuracy
+- Tests different buffer sizes
+
+### Complete Benchmark (`advance_run_complete.py`)
+
+Provides comprehensive end-to-end metrics:
+- Measures full pipeline from video input to HR output
+- Tracks both ROI detection and EVM processing
+- Calculates resource usage (CPU, memory, temperature)
+- Provides time breakdown percentages
+- Most realistic performance assessment
+
+## The CompleteMetrics Class
+
+At the core of the benchmarking system is the `CompleteMetrics` class (source/Python/experiments/advance_run_complete.py:27), which aggregates metrics across all pipeline stages:
+
+```python
+class CompleteMetrics:
+    """Combined metrics for ROI, EVM, and system resources"""
+    def __init__(self):
+        # Stage timing metrics
+        self.detection_times = []      # ROI detection time per frame
+        self.processing_times = []     # EVM processing time per chunk
+        self.end_to_end_times = []     # Total time per chunk
+        
+        # ROI metrics
+        self.successful_roi_detections = 0
+        self.roi_positions = []
+        self.roi_sizes = []
+        
+        # HR accuracy metrics
+        self.hr_errors = []
+        self.hr_absolute_errors = []
+        self.hr_predictions = []
+        self.hr_ground_truths = []
+        
+        # System resource metrics (critical for Raspberry Pi 4)
+        self.cpu_usage_samples = []
+        self.memory_usage_samples = []
+        self.temperature_samples = []
+```
+
+This unified approach allows for:
+- **Granular performance analysis** - Separate metrics for each pipeline stage
+- **Quality assessment** - Stability and reliability measurements
+- **Accuracy tracking** - Multiple error metrics and statistical measures
+- **Resource monitoring** - Essential for embedded deployment
+
+## Dataset and Ground Truth
+
+All benchmarks use the **UBFC-RPPG Dataset 2**, which provides:
+- 42 subjects with synchronized video and pulse oximeter data
+- CMS50E pulse oximeter ground truth (clinical-grade accuracy)
+- 30 FPS video recordings under controlled lighting
+- Frame-by-frame heart rate measurements
+
+<Card title="Learn More About the Dataset" icon="database" href="/benchmarking/dataset">
+  Detailed information about UBFC-RPPG Dataset 2 structure and usage
+</Card>
+
+## Platform Comparison
+
+The benchmarking system is designed to evaluate performance across different hardware:
+
+<AccordionGroup>
+  <Accordion title="Desktop PC Results">
+    Located in `results/results_pc/`
+    
+    Typical performance:
+    - ROI Detection: ~200 FPS (MediaPipe)
+    - EVM Processing: ~320 FPS per frame
+    - End-to-End: ~124 FPS
+    - MAE: ~13.3 BPM
+  </Accordion>
+  
+  <Accordion title="Raspberry Pi 4 Results">
+    Located in `results/results_rp4/`
+    
+    Includes temperature and throttling monitoring:
+    - CPU frequency tracking
+    - Temperature alerts (>75°C warning, >80°C critical)
+    - Throttling detection
+    - Memory pressure monitoring
+  </Accordion>
+</AccordionGroup>
+
+## Why Multiple Benchmark Types?
+
+Each benchmark serves a specific purpose:
+
+1. **ROI Benchmark** - When selecting the optimal face detector for your hardware
+2. **EVM Benchmark** - When tuning buffer sizes and EVM parameters
+3. **Complete Benchmark** - When validating full system performance for deployment
+
+By separating concerns, you can:
+- Identify bottlenecks in specific pipeline stages
+- Optimize components independently
+- Make data-driven decisions about model selection
+- Validate performance on target hardware before deployment
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Run Benchmarks" icon="play" href="/benchmarking/running-benchmarks">
+    Learn how to execute benchmarks on your system
+  </Card>
+  <Card title="Metrics Reference" icon="ruler" href="/benchmarking/metrics">
+    Detailed explanation of all collected metrics
+  </Card>
+  <Card title="Dataset Info" icon="database" href="/benchmarking/dataset">
+    Understand the UBFC-RPPG dataset structure
+  </Card>
+</CardGroup>

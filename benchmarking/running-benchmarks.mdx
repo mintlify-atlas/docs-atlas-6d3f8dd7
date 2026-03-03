@@ -1,0 +1,324 @@
+---
+title: Running Benchmarks
+description: Step-by-step guide to executing performance and accuracy benchmarks
+---
+
+This guide shows you how to run the three types of benchmarks included in the EVM Vital Signs Monitor project.
+
+## Prerequisites
+
+Before running benchmarks, ensure you have:
+
+<Steps>
+  <Step title="Dataset Download">
+    Download the UBFC-RPPG Dataset 2 from [the official source](https://sites.google.com/view/ybenezeth/ubfcrppg)
+    
+    Extract to a local directory (e.g., `/path/to/dataset_2`)
+  </Step>
+  
+  <Step title="Install Dependencies">
+    All required packages from the main project:
+    ```bash
+    pip install opencv-python numpy mediapipe mtcnn psutil
+    ```
+  </Step>
+  
+  <Step title="Configure Dataset Path">
+    Update the `DATASET_PATH` variable in the benchmark script to point to your dataset location
+  </Step>
+</Steps>
+
+## Complete Benchmark
+
+The complete benchmark (`advance_run_complete.py`) provides comprehensive end-to-end metrics including ROI detection, EVM processing, accuracy, and system resources.
+
+### Configuration
+
+Open `source/Python/experiments/advance_run_complete.py` and configure:
+
+```python
+# ==================== CONFIGURACIÓN ====================
+MODEL_TYPE = 'mediapipe'  # 'haar', 'mediapipe', 'mtcnn', 'yolo'
+YOLO_MODEL = None   # Only if MODEL_TYPE == 'yolo'
+BUFFER_SIZE = 200   # Number of frames per chunk
+DATASET_PATH = "/path/to/dataset_2"  # Update this path
+# =======================================================
+```
+
+### Running the Benchmark
+
+<Steps>
+  <Step title="Navigate to experiments directory">
+    ```bash
+    cd source/Python/experiments
+    ```
+  </Step>
+  
+  <Step title="Run the complete benchmark">
+    ```bash
+    python advance_run_complete.py
+    ```
+    
+    The script will:
+    - Process all 42 subjects in the dataset
+    - Display progress for each video
+    - Save results to `results/complete_benchmark_{model}_{timestamp}.json`
+  </Step>
+  
+  <Step title="Monitor Progress">
+    You'll see output like:
+    ```
+    Processing subject1...
+    Processing subject2...
+    ...
+    Results saved to: results/complete_benchmark_mediapipe_20251206_214658.json
+    ```
+  </Step>
+</Steps>
+
+### Example for Different Detectors
+
+<CodeGroup>
+
+```python MediaPipe (Recommended)
+MODEL_TYPE = 'mediapipe'
+YOLO_MODEL = None
+BUFFER_SIZE = 200
+DATASET_PATH = "/path/to/dataset_2"
+```
+
+```python Haar Cascade (Lightweight)
+MODEL_TYPE = 'haar'
+YOLO_MODEL = None
+BUFFER_SIZE = 200
+DATASET_PATH = "/path/to/dataset_2"
+```
+
+```python MTCNN (Accurate)
+MODEL_TYPE = 'mtcnn'
+YOLO_MODEL = None
+BUFFER_SIZE = 200
+DATASET_PATH = "/path/to/dataset_2"
+```
+
+```python YOLOv11 (Fast & Accurate)
+MODEL_TYPE = 'yolo'
+YOLO_MODEL = 'yolov11n'  # or 'yolov11s', 'yolov11m'
+BUFFER_SIZE = 200
+DATASET_PATH = "/path/to/dataset_2"
+```
+
+</CodeGroup>
+
+### Expected Output
+
+The complete benchmark generates a JSON file with:
+
+```json
+{
+  "configuration": {
+    "model_type": "mediapipe",
+    "buffer_size": 200,
+    "timestamp": "20251206_214658",
+    "num_videos": 41
+  },
+  "aggregate_statistics": {
+    "roi_performance_avg_detection_time_ms_mean": 5.20,
+    "roi_performance_detection_fps_mean": 206.58,
+    "evm_performance_avg_chunk_time_s_mean": 0.745,
+    "end_to_end_performance_end_to_end_fps_mean": 123.70,
+    "hr_accuracy_mae_bpm_mean": 13.31,
+    "system_cpu_usage_avg_percent_mean": 1.39,
+    "system_temperature_avg_celsius": 45.2
+  },
+  "individual_results": [
+    // Per-subject detailed metrics
+  ]
+}
+```
+
+### Results Location
+
+Results are saved to:
+- `source/Python/results/complete_benchmark_{model}_{timestamp}.json`
+
+Example filenames:
+- `complete_benchmark_mediapipe_20251206_214658.json`
+- `complete_benchmark_yolo_yolov11n_20251206_215432.json`
+
+## ROI-Only Benchmark
+
+The ROI benchmark (`advance_run_ROI.py`) focuses exclusively on face detection performance.
+
+### Configuration
+
+```python
+# ==================== CONFIGURACIÓN ====================
+MODEL_TYPE = 'yolo'  # 'haar', 'mediapipe', 'mtcnn', 'yolo'
+YOLO_MODEL = 'yolov11n'  # Only if MODEL_TYPE == 'yolo'
+BUFFER_SIZE = 50
+DATASET_PATH = "/path/to/dataset_2"
+# =======================================================
+```
+
+### Running
+
+```bash
+cd source/Python/experiments
+python advance_run_ROI.py
+```
+
+### Use Cases
+
+- **Model Selection**: Compare detection speeds across all four detector types
+- **Stability Analysis**: Evaluate ROI jitter and size variance
+- **Reliability Testing**: Measure detection rates and failure patterns
+- **Hardware Validation**: Test detector performance on target hardware
+
+### Key Metrics
+
+The ROI benchmark provides:
+- Average detection time per frame
+- Detection FPS
+- Detection success rate
+- ROI spatial jitter
+- ROI size variance
+- Consecutive failure statistics
+
+See the [Metrics Reference](/benchmarking/metrics) for details.
+
+## EVM-Only Benchmark
+
+The EVM benchmark (`advance_run_EVM.py`) isolates EVM processing performance and heart rate accuracy.
+
+### Configuration
+
+```python
+# ==================== CONFIGURACIÓN ====================
+BUFFER_SIZE = 200
+DATASET_PATH = "/path/to/dataset_2"
+# =======================================================
+```
+
+Note: No model type needed - uses MediaPipe by default for ROI detection.
+
+### Running
+
+```bash
+cd source/Python/experiments
+python advance_run_EVM.py
+```
+
+### Use Cases
+
+- **Buffer Size Optimization**: Test different buffer sizes (100, 150, 200, 250)
+- **EVM Performance**: Measure pure processing overhead
+- **Accuracy Testing**: Evaluate HR prediction quality
+- **Ground Truth Validation**: Verify accuracy against pulse oximeter data
+
+### Buffer Size Impact
+
+Testing different buffer sizes:
+
+<AccordionGroup>
+  <Accordion title="Buffer Size: 100 frames">
+    - Faster response time (3.3 seconds at 30 FPS)
+    - Lower accuracy due to less data
+    - More frequent processing
+  </Accordion>
+  
+  <Accordion title="Buffer Size: 200 frames (Recommended)">
+    - Balanced accuracy and latency (6.7 seconds)
+    - Good frequency resolution
+    - Standard configuration
+  </Accordion>
+  
+  <Accordion title="Buffer Size: 250+ frames">
+    - Higher accuracy potential
+    - Increased latency (8.3+ seconds)
+    - Higher memory usage
+  </Accordion>
+</AccordionGroup>
+
+## Understanding Results
+
+### Aggregate Statistics
+
+The benchmark calculates aggregate statistics across all subjects:
+
+- **Mean**: Average performance across all videos
+- **Std**: Standard deviation (variability)
+- **Median**: Middle value (robust to outliers)
+- **Min/Max**: Best and worst case performance
+
+### Individual Results
+
+Each subject's results include:
+
+```json
+{
+  "subject_id": "subject1",
+  "subject_num": 1,
+  "video_path": "/path/to/dataset_2/subject1/vid.mp4",
+  "roi_performance": { /* ... */ },
+  "evm_performance": { /* ... */ },
+  "end_to_end_performance": { /* ... */ },
+  "roi_quality": { /* ... */ },
+  "hr_accuracy": { /* ... */ },
+  "system_resources": { /* ... */ }
+}
+```
+
+## Performance Comparison
+
+Typical results on different hardware:
+
+<CardGroup cols={2}>
+  <Card title="Desktop PC" icon="desktop">
+    **MediaPipe:**
+    - ROI Detection: 206 FPS
+    - End-to-End: 124 FPS
+    - MAE: 13.3 BPM
+    
+    **Resource Usage:**
+    - CPU: 1.4% average
+    - Memory: 60%
+  </Card>
+  
+  <Card title="Raspberry Pi 4" icon="microchip">
+    **MediaPipe:**
+    - ROI Detection: ~30-50 FPS
+    - End-to-End: ~15-25 FPS
+    - MAE: Similar accuracy
+    
+    **Watch for:**
+    - Temperature > 75°C
+    - CPU throttling
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: Dataset path not found">
+    Update `DATASET_PATH` in the configuration section to point to your extracted UBFC-RPPG dataset.
+  </Accordion>
+  
+  <Accordion title="YOLO model not loading">
+    Ensure you have the YOLO models downloaded. The FaceDetector will download them automatically on first use.
+  </Accordion>
+  
+  <Accordion title="Out of memory errors">
+    Reduce `BUFFER_SIZE` or process fewer subjects at once. Large buffer sizes (250+) can use significant memory.
+  </Accordion>
+  
+  <Accordion title="Slow performance on Raspberry Pi">
+    This is expected. Use Haar Cascade or MediaPipe for best performance. Monitor temperature to avoid throttling.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Card title="Understand the Metrics" icon="chart-line" href="/benchmarking/metrics">
+  Learn what each metric means and how to interpret benchmark results
+</Card>

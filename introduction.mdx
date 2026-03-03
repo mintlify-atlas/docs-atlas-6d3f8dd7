@@ -1,0 +1,160 @@
+---
+title: Introduction
+description: Non-invasive vital signs monitoring using Eulerian Video Magnification and AI-based facial detection
+---
+
+# EVM Vital Signs Monitor
+
+A non-invasive vital signs monitoring system that uses **Eulerian Video Magnification (EVM)** and AI-based facial detection to estimate heart rate (HR) and respiratory rate (RR) from video. The system amplifies subtle color and motion changes in facial regions to extract physiological signals without any physical contact.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in minutes with a simple example
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed installation instructions for Python and Docker
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/overview">
+    Understand how EVM extracts vital signs from video
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/guides/configuration">
+    Learn how to configure the system for your use case
+  </Card>
+</CardGroup>
+
+## How It Works
+
+The system processes video frames through a five-stage pipeline:
+
+<Steps>
+  <Step title="Face Detection">
+    Locates facial region of interest (ROI) using AI models like MediaPipe, YOLOv8, Haar Cascade, or MTCNN
+  </Step>
+  <Step title="Pyramid Decomposition">
+    Builds Laplacian pyramids from video frames for multi-scale analysis
+  </Step>
+  <Step title="Temporal Filtering">
+    Applies dual-band bandpass filters:
+    - Heart rate: 0.8-3 Hz (48-180 BPM)
+    - Respiratory rate: 0.2-0.8 Hz (12-48 BPM)
+  </Step>
+  <Step title="Signal Amplification">
+    Magnifies subtle color variations using configurable amplification factors
+  </Step>
+  <Step title="Frequency Analysis">
+    Extracts dominant frequencies via FFT to determine HR and RR
+  </Step>
+</Steps>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Non-invasive Monitoring" icon="heart-pulse">
+    Extracts HR and RR from video feed without physical sensors
+  </Card>
+  <Card title="Multiple Detection Models" icon="brain">
+    Choose from YOLOv8, MediaPipe, Haar Cascade, or MTCNN based on your accuracy and performance needs
+  </Card>
+  <Card title="Optimized Pipeline" icon="gauge-high">
+    Single-pass dual-band processing for simultaneous HR/RR extraction - 50-60% faster than traditional approaches
+  </Card>
+  <Card title="Real-time Capable" icon="microchip">
+    Runs on Raspberry Pi 4 with 30+ FPS face detection
+  </Card>
+  <Card title="Comprehensive Benchmarking" icon="chart-line">
+    Performance and accuracy metrics validated against UBFC-RPPG dataset
+  </Card>
+  <Card title="ROI Stabilization" icon="bullseye">
+    Temporal filtering and weighted smoothing for stable measurements
+  </Card>
+</CardGroup>
+
+## Performance on Raspberry Pi 4
+
+Optimized for embedded systems deployment:
+
+- **Detection**: 30-40 FPS (MediaPipe)
+- **EVM Processing**: 1-2 seconds per 200-frame chunk
+- **End-to-End**: 3-4 seconds per measurement
+- **Accuracy**: MAE < 5 BPM for HR under optimal conditions
+
+## System Requirements
+
+### Minimum Requirements
+
+- **Python**: 3.8 or higher
+- **RAM**: 2GB minimum (4GB+ recommended for Raspberry Pi)
+- **Camera**: Any USB webcam or compatible video source
+- **OS**: Linux, macOS, or Windows
+
+### Hardware Recommendations
+
+<AccordionGroup>
+  <Accordion title="Desktop/Laptop">
+    - **CPU**: Dual-core processor (quad-core recommended)
+    - **RAM**: 4GB+ 
+    - **GPU**: Optional - can accelerate YOLO models with CUDA support
+  </Accordion>
+  
+  <Accordion title="Raspberry Pi">
+    - **Model**: Raspberry Pi 4 (4GB or 8GB RAM recommended)
+    - **OS**: Raspberry Pi OS (64-bit) or Ubuntu Server
+    - **Camera**: Raspberry Pi Camera Module v2 or USB webcam
+    - **Storage**: 16GB+ microSD card (Class 10 or higher)
+  </Accordion>
+</AccordionGroup>
+
+### Software Dependencies
+
+Core dependencies managed via `requirements.txt`:
+
+- **OpenCV**: 4.10.0.84 - Computer vision operations
+- **NumPy**: 1.24.0+ - Array operations
+- **SciPy**: 1.10.0+ - Signal processing
+- **MediaPipe**: 0.10.21 - Fast face detection
+- **Ultralytics**: 8.3.235 - YOLOv8/v12 models
+- **TensorFlow**: 2.16.1 - MTCNN support
+
+<Note>
+For Raspberry Pi deployment, MediaPipe is recommended as the face detector for optimal balance between speed and accuracy.
+</Note>
+
+## Limitations
+
+<Warning>
+**Important considerations for accurate measurements:**
+
+- Requires stable lighting conditions (avoid rapid changes)
+- Subject must remain relatively still during measurement
+- Performance degrades with rapid head movements
+- Respiratory rate detection is less reliable than heart rate
+- Minimum 6-7 seconds of video needed for accurate measurements (200 frames at 30 FPS)
+</Warning>
+
+## Use Cases
+
+- **Remote health monitoring**: Telehealth applications
+- **Wellness tracking**: Fitness and stress monitoring
+- **Research**: Physiological signal analysis
+- **Education**: Learning about computer vision and signal processing
+
+<Note>
+This project is for research and educational purposes. Not intended for medical diagnosis or treatment.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Get Started" icon="play" href="/quickstart">
+    Run your first vital signs measurement
+  </Card>
+  <Card title="Learn EVM" icon="graduation-cap" href="/concepts/eulerian-video-magnification">
+    Deep dive into Eulerian Video Magnification
+  </Card>
+  <Card title="Choose a Detector" icon="wand-magic-sparkles" href="/guides/choosing-detector">
+    Select the right face detection model
+  </Card>
+  <Card title="Run Benchmarks" icon="stopwatch" href="/benchmarking/overview">
+    Measure performance and accuracy
+  </Card>
+</CardGroup>

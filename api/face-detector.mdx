@@ -1,0 +1,280 @@
+---
+title: FaceDetector
+description: Unified face detector manager with ROI stabilization for multiple detection models
+---
+
+## Overview
+
+The `FaceDetector` class provides a unified interface to multiple face detection models with built-in ROI stabilization to reduce jitter and false positives. It supports Haar Cascade, MTCNN, YOLO, and MediaPipe detectors.
+
+## Initialization
+
+```python
+from src.face_detector.manager import FaceDetector
+
+detector = FaceDetector(model_type="mediapipe")
+```
+
+<ParamField path="model_type" type="str" default="haar">
+  Type of detector to use. Available options:
+  - `"haar"` - Haar Cascade classifier (fastest)
+  - `"mtcnn"` - Multi-task Cascaded CNN (most accurate)
+  - `"yolo"` - YOLO-based detector
+  - `"mediapipe"` - MediaPipe Face Detection (balanced)
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional parameters passed to the specific detector. See individual detector documentation for supported parameters.
+</ParamField>
+
+## Attributes
+
+<ResponseField name="MODELS" type="dict">
+  Dictionary mapping model type strings to detector classes:
+  ```python
+  {
+      "haar": HaarCascadeDetector,
+      "mtcnn": MTCNNDetector,
+      "yolo": YOLODetector,
+      "mediapipe": MediaPipeDetector
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="detector" type="BaseFaceDetector">
+  Current detector instance (one of the detector types from MODELS).
+</ResponseField>
+
+<ResponseField name="roi_history" type="deque">
+  History of recent ROI detections for stabilization (maxlen=5).
+</ResponseField>
+
+<ResponseField name="stabilized_roi" type="tuple | None">
+  Current stabilized ROI coordinates as `(x, y, w, h)` or None.
+</ResponseField>
+
+## Methods
+
+### detect_face()
+
+Detect face in frame with stabilization and bounds checking.
+
+```python
+roi = detector.detect_face(frame)
+if roi:
+    x, y, w, h = roi
+    face_region = frame[y:y+h, x:x+w]
+```
+
+<ParamField path="frame" type="numpy.ndarray" required>
+  Input image frame in BGR format (OpenCV default).
+</ParamField>
+
+<ResponseField name="return" type="tuple | None">
+  Stabilized ROI coordinates as `(x, y, w, h)` in pixels, or None if no face detected.
+  - `x`: X-coordinate of top-left corner
+  - `y`: Y-coordinate of top-left corner
+  - `w`: Width of the ROI
+  - `h`: Height of the ROI
+  
+  Coordinates are guaranteed to be within frame boundaries.
+</ResponseField>
+
+### stabilize_roi()
+
+Apply temporal smoothing to ROI using weighted averaging.
+
+```python
+stabilized = detector.stabilize_roi(new_roi)
+```
+
+<ParamField path="new_roi" type="tuple | None" required>
+  New ROI detection as `(x, y, w, h)` or None.
+</ParamField>
+
+<ResponseField name="return" type="tuple | None">
+  Stabilized ROI coordinates or previous stable ROI if no new detection provided.
+  
+  Uses weighted average of recent ROIs (weights defined in `config.ROI_WEIGHTS`).
+  Requires minimum 3 detections in history for stabilization to take effect.
+</ResponseField>
+
+### is_significant_change()
+
+Check if ROI change exceeds threshold to avoid unnecessary updates.
+
+```python
+if detector.is_significant_change(old_roi, new_roi):
+    # Update UI or trigger event
+```
+
+<ParamField path="old_roi" type="tuple" required>
+  Previous ROI as `(x, y, w, h)`.
+</ParamField>
+
+<ParamField path="new_roi" type="tuple" required>
+  Current ROI as `(x, y, w, h)`.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if change in any dimension exceeds `ROI_CHANGE_THRESHOLD` pixels (default: 20px), False otherwise.
+</ResponseField>
+
+### close()
+
+Release resources used by the detector.
+
+```python
+detector.close()
+```
+
+Should be called when the detector is no longer needed.
+
+## Usage Examples
+
+### Basic Usage with MediaPipe
+
+```python
+import cv2
+from src.face_detector.manager import FaceDetector
+
+# Initialize detector
+face_detector = FaceDetector(model_type='mediapipe')
+
+# Process video
+cap = cv2.VideoCapture(0)
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Detect face with stabilization
+        roi = face_detector.detect_face(frame)
+        
+        if roi:
+            x, y, w, h = roi
+            # Draw bounding box
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        
+        cv2.imshow('Face Detection', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    cap.release()
+    face_detector.close()
+    cv2.destroyAllWindows()
+```
+
+### Using YOLO Detector
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Initialize with YOLO preset
+face_detector = FaceDetector(
+    model_type='yolo',
+    preset='yolov8n',  # or 'yolov12n'
+    confidence=0.5
+)
+
+# Use detector
+roi = face_detector.detect_face(frame)
+```
+
+### Using Haar Cascade with Custom Parameters
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Initialize with custom Haar parameters
+face_detector = FaceDetector(
+    model_type='haar',
+    scale_factor=1.1,
+    min_neighbors=5,
+    min_size=(50, 50)
+)
+
+roi = face_detector.detect_face(frame)
+```
+
+### Using MTCNN with Custom Confidence
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Initialize with higher confidence threshold
+face_detector = FaceDetector(
+    model_type='mtcnn',
+    min_confidence=0.95
+)
+
+roi = face_detector.detect_face(frame)
+```
+
+### Complete Pipeline Example
+
+From `experiments/simple_run_ROI.py`:
+
+```python
+import cv2
+import time
+from src.face_detector.manager import FaceDetector
+
+def benchmark_face_detection(video_source):
+    cap = cv2.VideoCapture(video_source)
+    face_detector = FaceDetector(model_type='mediapipe')
+    
+    frame_count = 0
+    detection_times = []
+    
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_count += 1
+            
+            # Measure detection time
+            start_time = time.time()
+            roi = face_detector.detect_face(frame)
+            end_time = time.time()
+            
+            detection_time = end_time - start_time
+            detection_times.append(detection_time)
+            
+            # Show progress
+            if frame_count % 200 == 0:
+                avg_time = sum(detection_times[-200:]) / 200
+                current_fps = 1.0 / avg_time if avg_time > 0 else 0
+                print(f"Frame {frame_count}: {avg_time*1000:.1f}ms, FPS: {current_fps:.1f}")
+    
+    finally:
+        cap.release()
+        face_detector.close()
+```
+
+## Stabilization Details
+
+The `FaceDetector` includes sophisticated ROI stabilization:
+
+1. **Temporal Smoothing**: Uses weighted average of last 5 detections
+2. **Weights Configuration**: More recent detections have higher weight (from `config.ROI_WEIGHTS`)
+3. **Minimum History**: Requires at least 3 detections before applying stabilization
+4. **Change Threshold**: Only updates when change exceeds 20 pixels (configurable)
+5. **Bounds Checking**: Ensures ROI stays within frame boundaries
+
+## Performance Characteristics
+
+| Detector | Speed | Accuracy | Use Case |
+|----------|-------|----------|----------|
+| **haar** | Fastest (~30+ FPS) | Good | Real-time on low-power devices |
+| **mediapipe** | Fast (~25 FPS) | Very Good | Balanced performance |
+| **yolo** | Moderate (~15 FPS) | Excellent | High accuracy needed |
+| **mtcnn** | Slow (~10 FPS) | Excellent | Maximum accuracy |
+
+<Note>
+  From `experiments/advance_run_complete.py`: The detector tracks performance metrics including detection time, FPS, ROI stability (jitter), and consecutive failure counts.
+</Note>

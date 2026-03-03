@@ -1,0 +1,385 @@
+---
+title: UBFC-RPPG Dataset
+description: Information about the UBFC-RPPG Dataset 2 used for benchmarking
+---
+
+The EVM Vital Signs Monitor benchmarking system uses the **UBFC-RPPG Dataset 2** to evaluate heart rate prediction accuracy and system performance.
+
+## Dataset Overview
+
+UBFC-RPPG is a publicly available dataset designed for remote photoplethysmography (rPPG) research.
+
+<Card title="Dataset Source" icon="link" href="https://sites.google.com/view/ybenezeth/ubfcrppg">
+  Official UBFC-RPPG Dataset homepage (University of Burgundy)
+</Card>
+
+### Key Features
+
+- **42 subjects** with diverse skin tones and facial features
+- **30 FPS video** recordings (uncompressed or low compression)
+- **Synchronized ground truth** from CMS50E pulse oximeter
+- **Controlled environment** with consistent lighting conditions
+- **Seated subjects** with minimal movement
+- **60-120 second recordings** per subject
+
+## Ground Truth Data
+
+The dataset includes high-quality ground truth heart rate measurements from a clinical-grade device.
+
+### CMS50E Pulse Oximeter
+
+The ground truth is collected using the **Contec CMS50E pulse oximeter**, which provides:
+
+- **Transmissive PPG sensor** (finger clip)
+- **Clinical-grade accuracy** (±2 BPM)
+- **Frame-synchronized measurements** at 30 Hz
+- **More reliable than camera-based methods** for validation
+
+<Info>
+The CMS50E uses infrared light directly on the fingertip, providing much higher signal quality than facial video. This makes it an excellent ground truth reference for validating remote PPG methods.
+</Info>
+
+### Why CMS50E is Reliable
+
+<AccordionGroup>
+  <Accordion title="Direct Contact Measurement">
+    Unlike camera-based rPPG, the pulse oximeter has direct skin contact with a dedicated PPG sensor, eliminating:
+    - Motion artifacts from facial movement
+    - Ambient lighting variations
+    - Camera sensor noise
+    - Distance and angle effects
+  </Accordion>
+  
+  <Accordion title="Medical-Grade Calibration">
+    The CMS50E is FDA-approved and clinically validated:
+    - Calibrated against ECG measurements
+    - Tested across diverse populations
+    - Meets ISO 80601-2-61 standards
+  </Accordion>
+  
+  <Accordion title="High Temporal Resolution">
+    Synchronized at 30 Hz with video frames:
+    - One heart rate measurement per video frame
+    - Allows chunk-level comparison
+    - No interpolation needed
+  </Accordion>
+</AccordionGroup>
+
+## Dataset Structure
+
+The dataset is organized by subject, with each subject's data in a separate folder.
+
+### Directory Layout
+
+```
+dataset_2/
+├── subject1/
+│   ├── vid.mp4           # Video recording
+│   └── ground_truth.txt  # HR data from pulse oximeter
+├── subject2/
+│   ├── vid.mp4
+│   └── ground_truth.txt
+├── subject3/
+│   ├── vid.mp4
+│   └── ground_truth.txt
+...
+└── subject42/
+    ├── vid.mp4
+    └── ground_truth.txt
+```
+
+### Video Files (`vid.mp4`)
+
+Each video file contains:
+- **Resolution**: Typically 640x480 pixels
+- **Frame rate**: 30 FPS
+- **Duration**: 60-120 seconds
+- **Format**: H.264 encoded MP4
+- **Content**: Frontal face view of seated subject
+
+### Ground Truth Files (`ground_truth.txt`)
+
+Each `ground_truth.txt` file is a space-delimited text file with two rows:
+
+```
+0 1 2 3 4 5 6 7 8 ...           # Frame indices
+72.3 72.5 72.4 72.6 72.8 ...    # Heart rate (BPM) per frame
+```
+
+- **Row 1**: Frame timestamps/indices
+- **Row 2**: Heart rate in beats per minute (BPM) for each frame
+
+### Loading Ground Truth
+
+The `GroundTruthHandler` class handles loading and processing this data:
+
+```python
+from src.utils.ground_truth_handler import GroundTruthHandler
+
+# Initialize handler
+gt_handler = GroundTruthHandler(
+    gt_path="dataset_2/subject1/ground_truth.txt",
+    frame_chunk_size=200  # Matches BUFFER_SIZE
+)
+
+# Load ground truth data
+gt_handler.load_ground_truth()
+
+# Get average HR for a chunk
+chunk_hr = gt_handler.get_hr_for_chunk(chunk_index=0)
+print(f"Chunk 0 average HR: {chunk_hr:.1f} BPM")
+```
+
+See source/Python/src/utils/ground_truth_handler.py:5
+
+## How Ground Truth Handler Works
+
+The `GroundTruthHandler` class processes ground truth data to align with the EVM chunked processing approach.
+
+### Chunk Averaging
+
+Since EVM processes frames in chunks (e.g., 200 frames), the handler calculates average heart rate per chunk:
+
+<Steps>
+  <Step title="Load Raw Data">
+    Read the `ground_truth.txt` file containing per-frame HR values.
+    
+    ```python
+    self.gt_data = np.loadtxt(gt_path)
+    self.gt_hr = self.gt_data[1, :]  # Second row = HR values
+    ```
+  </Step>
+  
+  <Step title="Calculate Chunk Averages">
+    Divide frame-level data into chunks and compute mean HR per chunk.
+    
+    ```python
+    num_chunks = len(self.gt_hr) // self.frame_chunk_size
+    
+    self.gt_chunk_hrs = [
+        np.mean(self.gt_hr[i * chunk_size:(i + 1) * chunk_size]) 
+        for i in range(num_chunks)
+    ]
+    ```
+  </Step>
+  
+  <Step title="Retrieve Chunk Values">
+    Access averaged HR for comparison with EVM predictions.
+    
+    ```python
+    true_hr = gt_handler.get_hr_for_chunk(chunk_index)
+    error = abs(predicted_hr - true_hr)
+    ```
+  </Step>
+</Steps>
+
+### Why Chunk Averaging?
+
+The EVM algorithm outputs **one heart rate per chunk** (e.g., every 200 frames), not per frame:
+
+1. **Frequency Resolution**: FFT requires sufficient samples to resolve heart rate frequencies (0.8-2.5 Hz)
+2. **Noise Reduction**: Averaging over multiple cardiac cycles reduces noise
+3. **Computational Efficiency**: Processing chunks is faster than per-frame analysis
+
+Therefore, ground truth must be aggregated to match this granularity.
+
+## Implementation Details
+
+### Key Methods
+
+<ParamField path="load_ground_truth()" type="method">
+  Loads ground truth data from file and calculates chunk averages.
+  
+  **Returns**: `True` if successful, `False` on error
+  
+  ```python
+  success = gt_handler.load_ground_truth()
+  if success:
+      print(f"Loaded {gt_handler.get_available_chunks_count()} chunks")
+  ```
+</ParamField>
+
+<ParamField path="get_hr_for_chunk(chunk_index)" type="method">
+  Retrieves average heart rate for a specific chunk.
+  
+  **Parameters**:
+  - `chunk_index` (int): Zero-based chunk index
+  
+  **Returns**: Heart rate in BPM, or `None` if unavailable
+  
+  ```python
+  chunk_0_hr = gt_handler.get_hr_for_chunk(0)  # First chunk
+  chunk_1_hr = gt_handler.get_hr_for_chunk(1)  # Second chunk
+  ```
+</ParamField>
+
+<ParamField path="calculate_error(estimated_hr, chunk_index)" type="method">
+  Calculates absolute error between estimated and ground truth HR.
+  
+  **Returns**: `(error, true_hr)` tuple
+  
+  ```python
+  error, true_hr = gt_handler.calculate_error(
+      estimated_hr=75.2,
+      chunk_index=0
+  )
+  print(f"Error: {error:.2f} BPM (True: {true_hr:.2f})")
+  ```
+</ParamField>
+
+<ParamField path="get_summary_stats()" type="method">
+  Provides summary statistics of ground truth data.
+  
+  **Returns**: Dictionary with `total_points`, `total_chunks`, `hr_min`, `hr_max`, `hr_mean`, `hr_std`
+  
+  ```python
+  stats = gt_handler.get_summary_stats()
+  print(f"HR range: {stats['hr_min']:.1f} - {stats['hr_max']:.1f} BPM")
+  ```
+</ParamField>
+
+### Setup Utility Function
+
+For quick initialization, use the `setup_ground_truth()` helper:
+
+```python
+from src.utils.ground_truth_handler import setup_ground_truth
+
+gt_handler, video_path = setup_ground_truth(
+    subject_num=1,
+    dataset_path="/path/to/dataset_2",
+    buffer_size=200
+)
+
+# Handler is ready to use
+chunk_hr = gt_handler.get_hr_for_chunk(0)
+```
+
+See source/Python/src/utils/ground_truth_handler.py:126
+
+## Using the Dataset in Benchmarks
+
+The benchmark scripts automatically iterate through all subjects:
+
+```python
+for subject_dir in os.listdir(DATASET_PATH):
+    if subject_dir.startswith("subject"):
+        subject_num = int(subject_dir[7:])
+        
+        # Setup paths
+        video_path = f"{DATASET_PATH}/{subject_dir}/vid.mp4"
+        
+        # Load ground truth
+        gt_handler, _ = setup_ground_truth(
+            subject_num=subject_num,
+            dataset_path=DATASET_PATH,
+            buffer_size=BUFFER_SIZE
+        )
+        
+        # Process video and compare with ground truth
+        # ...
+```
+
+### Benchmark Flow
+
+<Steps>
+  <Step title="Load Video and Ground Truth">
+    For each subject, open the video file and load synchronized HR data.
+  </Step>
+  
+  <Step title="Process Chunks">
+    Run face detection + EVM on chunks of 200 frames.
+    
+    After each chunk:
+    - Get predicted HR from EVM
+    - Get true HR from ground truth handler
+    - Calculate error metrics
+  </Step>
+  
+  <Step title="Aggregate Results">
+    Collect all errors and compute:
+    - MAE (Mean Absolute Error)
+    - RMSE (Root Mean Square Error)
+    - Correlation coefficient
+    - Accuracy within thresholds
+  </Step>
+</Steps>
+
+## Dataset Characteristics
+
+### Heart Rate Range
+
+Typical heart rates in the dataset:
+- **Minimum**: ~55 BPM (resting, fit individuals)
+- **Maximum**: ~95 BPM (resting, elevated)
+- **Mean**: ~72 BPM
+- **Std Dev**: ~8 BPM
+
+### Subject Diversity
+
+The dataset includes:
+- **Gender**: Mixed male and female subjects
+- **Age**: Young adults (typically 20-40 years)
+- **Skin tone**: Various Fitzpatrick types (though predominantly lighter skin)
+- **Facial features**: Varied facial structures, some with glasses/facial hair
+
+<Warning>
+The dataset has limited representation of darker skin tones. Performance may differ on more diverse populations. Always validate on your target demographic.
+</Warning>
+
+### Lighting Conditions
+
+All videos were recorded:
+- **Indoor environment** with controlled lighting
+- **Frontal lighting** to minimize shadows
+- **Consistent color temperature** across subjects
+- **No direct sunlight** or strong ambient light changes
+
+## Dataset Limitations
+
+<AccordionGroup>
+  <Accordion title="Static Scenarios Only">
+    All subjects are seated and relatively still. Performance on moving subjects, different angles, or outdoor conditions is not represented.
+  </Accordion>
+  
+  <Accordion title="Limited Skin Tone Diversity">
+    The dataset primarily includes lighter skin tones. rPPG performance can vary significantly with skin tone due to melanin absorption.
+  </Accordion>
+  
+  <Accordion title="Controlled Lighting">
+    Real-world applications may encounter:
+    - Varying light sources
+    - Shadows and occlusions
+    - Different color temperatures
+    - Ambient light changes
+  </Accordion>
+  
+  <Accordion title="Healthy Subjects Only">
+    All subjects have normal heart rhythms. Arrhythmias, very high/low HR, or cardiac conditions are not represented.
+  </Accordion>
+</AccordionGroup>
+
+## Citation
+
+If you use the UBFC-RPPG dataset in your research, please cite:
+
+```bibtex
+@inproceedings{bobbia2019unsupervised,
+  title={Unsupervised skin tissue segmentation for remote photoplethysmography},
+  author={Bobbia, S. and Macwan, R. and Benezeth, Y. and Mansouri, A. and Dubois, J.},
+  booktitle={Pattern Recognition and Image Analysis},
+  pages={303--308},
+  year={2019}
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Run Benchmarks" icon="play" href="/benchmarking/running-benchmarks">
+    Use the dataset to benchmark your configuration
+  </Card>
+  <Card title="Metrics Reference" icon="chart-line" href="/benchmarking/metrics">
+    Understand the accuracy metrics calculated from ground truth
+  </Card>
+</CardGroup>

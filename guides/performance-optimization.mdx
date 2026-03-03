@@ -1,0 +1,793 @@
+---
+title: Performance Optimization
+description: Advanced techniques for optimizing EVM Vital Signs Monitor performance and accuracy
+---
+
+## Overview
+
+This guide covers advanced optimization techniques for the EVM Vital Signs Monitor. The system is already highly optimized through **dual-band processing** (~50-60% faster than traditional approaches), but additional tuning can further improve performance based on your specific requirements.
+
+<Note>
+  Focus on optimizations that matter for your deployment. Don't over-optimize if default settings already meet your requirements.
+</Note>
+
+---
+
+## Dual-Band Optimization
+
+The **most significant optimization** in this implementation is the dual-band processing architecture.
+
+### How It Works
+
+<Steps>
+  <Step title="Single pyramid construction">
+    Build Laplacian pyramids **once** from video frames:
+    ```python
+    # Build pyramids (SINGLE PASS)
+    laplacian_pyramids = build_video_pyramid_stack(
+        video_frames, levels=LEVELS_RPI
+    )
+    ```
+  </Step>
+  
+  <Step title="Parallel band extraction">
+    Extract both HR and RR signals from the same pyramid:
+    ```python
+    # Extract different pyramid levels for each signal
+    level_hr = min(3, num_levels - 1)  # Level 3 for HR
+    level_rr = min(2, num_levels - 1)  # Level 2 for RR
+    
+    tensor_hr = extract_pyramid_level(laplacian_pyramids, level_hr)
+    tensor_rr = extract_pyramid_level(laplacian_pyramids, level_rr)
+    ```
+  </Step>
+  
+  <Step title="Separate temporal filtering">
+    Apply different bandpass filters to each signal:
+    ```python
+    # HR band: 0.8-3 Hz (50-180 BPM)
+    filtered_hr = apply_temporal_bandpass(
+        tensor_hr, LOW_HEART, HIGH_HEART, FPS
+    )
+    
+    # RR band: 0.2-0.8 Hz (12-48 breaths/min)
+    filtered_rr = apply_temporal_bandpass(
+        tensor_rr, LOW_RESP, HIGH_RESP, FPS
+    )
+    ```
+  </Step>
+  
+  <Step title="Independent amplification">
+    Amplify each band with optimal factors:
+    ```python
+    filtered_hr *= ALPHA_HR  # 30x amplification
+    filtered_rr *= ALPHA_RR  # 50x amplification
+    ```
+  </Step>
+</Steps>
+
+### Performance Benefit
+
+<CodeGroup>
+  ```python Traditional Approach (Slow)
+  # Process HR
+  pyramids_hr = build_pyramids(frames)  # FIRST BUILD
+  filtered_hr = apply_filter(pyramids_hr, HR_BAND)
+  hr_signal = extract_signal(filtered_hr)
+  
+  # Process RR
+  pyramids_rr = build_pyramids(frames)  # SECOND BUILD 🔴
+  filtered_rr = apply_filter(pyramids_rr, RR_BAND)
+  rr_signal = extract_signal(filtered_rr)
+  
+  # Total time: ~2x pyramid construction
+  ```
+  
+  ```python Optimized Approach (Fast)
+  # Build pyramids ONCE
+  pyramids = build_pyramids(frames)  # SINGLE BUILD ✅
+  
+  # Extract both signals from same pyramids
+  filtered_hr = apply_filter(pyramids[level_hr], HR_BAND)
+  filtered_rr = apply_filter(pyramids[level_rr], RR_BAND)
+  
+  hr_signal = extract_signal(filtered_hr)
+  rr_signal = extract_signal(filtered_rr)
+  
+  # Total time: ~50-60% faster
+  ```
+</CodeGroup>
+
+**Performance comparison:**
+
+| Approach | Processing Time (200 frames) | Speedup |
+|----------|------------------------------|----------|
+| Traditional (two passes) | ~3-4 seconds | 1x |
+| **Dual-band (single pass)** | **~1-2 seconds** | **2x** |
+
+<Tip>
+  The dual-band architecture is already implemented in `src/evm/evm_core.py`. No changes needed - you get this optimization by default.
+</Tip>
+
+---
+
+## Buffer Size Tuning
+
+Buffer size (number of frames processed at once) affects both frequency resolution and latency.
+
+### Default Configuration
+
+```python
+# Typical usage (not in config.py, but used in experiments)
+BUFFER_SIZE = 200  # frames
+FPS = 30           # frames per second
+
+# Duration: 200 / 30 = ~6.7 seconds of video
+```
+
+### Trade-offs
+
+<Tabs>
+  <Tab title="Small Buffer (150 frames)">
+    ```python
+    BUFFER_SIZE = 150  # ~5 seconds at 30 FPS
+    ```
+    
+    **Advantages:**
+    - Faster measurements (lower latency)
+    - Lower memory usage
+    - Better for real-time applications
+    
+    **Disadvantages:**
+    - Lower frequency resolution
+    - Less accurate for slow heart rates
+    - May miss respiratory rate entirely
+  </Tab>
+  
+  <Tab title="Medium Buffer (200 frames)">
+    ```python
+    BUFFER_SIZE = 200  # ~6.7 seconds (DEFAULT)
+    ```
+    
+    **Advantages:**
+    - Good frequency resolution (0.15 Hz)
+    - Balanced latency
+    - Reliable HR detection
+    - Acceptable RR detection
+    
+    **Disadvantages:**
+    - Requires subject to stay still for ~7 seconds
+    
+    ✅ **Recommended for most use cases**
+  </Tab>
+  
+  <Tab title="Large Buffer (300 frames)">
+    ```python
+    BUFFER_SIZE = 300  # ~10 seconds at 30 FPS
+    ```
+    
+    **Advantages:**
+    - Best frequency resolution (0.1 Hz)
+    - Most accurate measurements
+    - Excellent for research/validation
+    
+    **Disadvantages:**
+    - Higher latency (~10s + processing)
+    - More memory usage
+    - Subject must remain very still
+  </Tab>
+</Tabs>
+
+### Frequency Resolution
+
+Buffer size determines frequency resolution:
+
+```python
+# Frequency resolution = FPS / BUFFER_SIZE
+
+BUFFER_SIZE = 150
+resolution = 30 / 150  # 0.2 Hz = 12 BPM
+# Can distinguish: 60 BPM vs 72 BPM ✓
+# Cannot distinguish: 60 BPM vs 66 BPM ✗
+
+BUFFER_SIZE = 200
+resolution = 30 / 200  # 0.15 Hz = 9 BPM
+# Can distinguish: 60 BPM vs 69 BPM ✓
+
+BUFFER_SIZE = 300
+resolution = 30 / 300  # 0.1 Hz = 6 BPM
+# Can distinguish: 60 BPM vs 66 BPM ✓
+```
+
+<Note>
+  For clinical applications requiring high precision, use 250-300 frames. For real-time monitoring, 150-200 frames is sufficient.
+</Note>
+
+---
+
+## Pyramid Level Selection
+
+The number of pyramid levels (`LEVELS_RPI`) is the **most critical performance parameter**.
+
+### How Pyramid Levels Work
+
+```python
+# Each pyramid level is a downsampled version
+Level 0: Original size (e.g., 320x240)
+Level 1: 160x120 (1/4 pixels)
+Level 2: 80x60 (1/16 pixels)
+Level 3: 40x30 (1/64 pixels)
+Level 4: 20x15 (1/256 pixels)
+```
+
+### Performance Impact
+
+<Tabs>
+  <Tab title="LEVELS_RPI = 2">
+    ```python
+    LEVELS_RPI = 2
+    ```
+    
+    **Performance:**
+    - Processing time: ~0.5-1s
+    - Memory: ~100 MB
+    - RPi4 CPU: 30-40%
+    
+    **Quality:**
+    - HR accuracy: Reduced (~10 BPM MAE)
+    - RR accuracy: Poor
+    - Signal-to-noise ratio: Low
+    
+    ❌ **Not recommended** - too coarse
+  </Tab>
+  
+  <Tab title="LEVELS_RPI = 3 (OPTIMAL)">
+    ```python
+    LEVELS_RPI = 3  # Default
+    ```
+    
+    **Performance:**
+    - Processing time: ~1-2s
+    - Memory: ~150 MB
+    - RPi4 CPU: 40-50%
+    
+    **Quality:**
+    - HR accuracy: Good (~5 BPM MAE)
+    - RR accuracy: Acceptable
+    - Signal-to-noise ratio: Good
+    
+    ✅ **Recommended for Raspberry Pi 4**
+  </Tab>
+  
+  <Tab title="LEVELS_RPI = 4">
+    ```python
+    LEVELS_RPI = 4
+    ```
+    
+    **Performance:**
+    - Processing time: ~3-5s
+    - Memory: ~250 MB
+    - RPi4 CPU: 60-70%
+    
+    **Quality:**
+    - HR accuracy: Better (~3 BPM MAE)
+    - RR accuracy: Good
+    - Signal-to-noise ratio: High
+    
+    ⚠️ Use for desktop/laptop, too slow for RPi real-time
+  </Tab>
+  
+  <Tab title="LEVELS_RPI = 5">
+    ```python
+    LEVELS_RPI = 5
+    ```
+    
+    **Performance:**
+    - Processing time: ~8-12s
+    - Memory: ~400 MB
+    - RPi4 CPU: 80-90%
+    
+    **Quality:**
+    - HR accuracy: Best (~2 BPM MAE)
+    - RR accuracy: Very good
+    - Signal-to-noise ratio: Very high
+    
+    ❌ Only for offline analysis/research
+  </Tab>
+</Tabs>
+
+### Level Selection Strategy
+
+The system uses different levels for different signals:
+
+```python
+# From evm_core.py
+
+# HR uses higher spatial frequency (smaller features)
+level_hr = min(3, num_levels - 1)  # Level 3
+
+# RR uses lower spatial frequency (larger features)
+level_rr = min(2, num_levels - 1)  # Level 2
+```
+
+**Why different levels?**
+- **Heart rate**: Subtle color changes require finer spatial detail (level 3)
+- **Respiratory rate**: Chest motion is larger and requires less detail (level 2)
+
+<Tip>
+  Don't change the level selection logic unless you're doing research. The current values are empirically optimized.
+</Tip>
+
+---
+
+## ROI Size Optimization
+
+`TARGET_ROI_SIZE` directly affects processing speed.
+
+### Size vs. Performance
+
+| ROI Size | Pixels | RPi4 Time | Desktop Time | Quality |
+|----------|--------|-----------|--------------|----------|
+| (240, 180) | 43K | ~0.8s | ~0.3s | Acceptable |
+| **(320, 240)** | **77K** | **~1-2s** | **~0.5s** | **Good** ✅ |
+| (480, 360) | 173K | ~3-4s | ~1s | Better |
+| (640, 480) | 307K | ~5-7s | ~2s | Best |
+
+### Choosing ROI Size
+
+<CodeGroup>
+  ```python Raspberry Pi (Real-time)
+  # Optimize for speed
+  TARGET_ROI_SIZE = (320, 240)  # Default
+  
+  # Even faster (slight quality loss)
+  TARGET_ROI_SIZE = (240, 180)
+  ```
+  
+  ```python Desktop/Laptop (Quality)
+  # Balance speed and quality
+  TARGET_ROI_SIZE = (480, 360)
+  
+  # Maximum quality (offline)
+  TARGET_ROI_SIZE = (640, 480)
+  ```
+  
+  ```python Battery-Powered (Efficiency)
+  # Minimize power consumption
+  TARGET_ROI_SIZE = (240, 180)
+  LEVELS_RPI = 2
+  ```
+</CodeGroup>
+
+**ROI size calculation:**
+
+```python
+import cv2
+
+# After face detection
+x, y, w, h = roi
+face_roi = frame[y:y+h, x:x+w]
+
+# Resize to target size
+resized_roi = cv2.resize(
+    face_roi,
+    TARGET_ROI_SIZE,
+    interpolation=cv2.INTER_LINEAR
+)
+
+# Process resized ROI
+results = process_video_evm_vital_signs([resized_roi, ...])
+```
+
+---
+
+## Amplification Factor Tuning
+
+Amplification factors control signal magnification strength.
+
+### Heart Rate Amplification (ALPHA_HR)
+
+```python
+# Default
+ALPHA_HR = 30
+```
+
+**When to adjust:**
+
+<Accordion title="Low Signal Strength">
+  Increase `ALPHA_HR` to 35-40 if:
+  - Subject has darker skin tone
+  - Poor lighting conditions
+  - Weak pulse (e.g., hypothermia)
+  - Using smaller ROI size
+  
+  ```python
+  ALPHA_HR = 40  # Stronger amplification
+  ```
+</Accordion>
+
+<Accordion title="Excessive Noise">
+  Decrease `ALPHA_HR` to 20-25 if:
+  - Getting unrealistic HR readings (>200 BPM)
+  - Lots of motion artifacts
+  - Bright/harsh lighting
+  - Large ROI size
+  
+  ```python
+  ALPHA_HR = 25  # Gentler amplification
+  ```
+</Accordion>
+
+### Respiratory Rate Amplification (ALPHA_RR)
+
+```python
+# Default
+ALPHA_RR = 50
+```
+
+**Tuning guidelines:**
+
+```python
+# For shallow breathing
+ALPHA_RR = 60  # Amplify more
+
+# For deep breathing or motion artifacts
+ALPHA_RR = 40  # Amplify less
+```
+
+<Warning>
+  Respiratory rate detection is inherently less reliable than heart rate. Don't expect clinical-grade accuracy even with optimal tuning.
+</Warning>
+
+---
+
+## Frequency Band Optimization
+
+Adjust frequency bands to match your target population.
+
+### Heart Rate Bands
+
+```python
+# Default: General population (50-180 BPM)
+LOW_HEART = 0.83   # 50 BPM
+HIGH_HEART = 3.0   # 180 BPM
+```
+
+**Population-specific tuning:**
+
+<CodeGroup>
+  ```python Athletes
+  # Resting HR: 40-120 BPM
+  # Max HR: Up to 200 BPM
+  
+  LOW_HEART = 0.67   # 40 BPM
+  HIGH_HEART = 3.33  # 200 BPM
+  
+  MIN_HEART_BPM = 35
+  MAX_HEART_BPM = 210
+  ```
+  
+  ```python Elderly
+  # Lower max HR
+  
+  LOW_HEART = 0.67   # 40 BPM
+  HIGH_HEART = 2.5   # 150 BPM
+  
+  MIN_HEART_BPM = 35
+  MAX_HEART_BPM = 160
+  ```
+  
+  ```python Infants
+  # Higher baseline HR
+  
+  LOW_HEART = 1.5    # 90 BPM
+  HIGH_HEART = 3.5   # 210 BPM
+  
+  MIN_HEART_BPM = 80
+  MAX_HEART_BPM = 220
+  ```
+</CodeGroup>
+
+### Avoiding Band Overlap
+
+<Warning>
+  RR and HR frequency bands **must not overlap** or you'll get interference.
+</Warning>
+
+```python
+# Bad configuration (overlap!)
+LOW_HEART = 0.5   # 30 BPM
+HIGH_RESP = 0.6   # 36 RPM
+# Overlap region: 0.5-0.6 Hz causes interference
+
+# Good configuration (no overlap)
+LOW_HEART = 0.83  # 50 BPM
+HIGH_RESP = 0.5   # 30 RPM
+# Gap: 0.5-0.83 Hz ensures separation
+```
+
+**Validation:**
+
+```python
+import src.config as config
+
+# Verify no overlap
+assert config.HIGH_RESP < config.LOW_HEART, \
+    f"Band overlap: RR {config.HIGH_RESP} >= HR {config.LOW_HEART}"
+
+gap = config.LOW_HEART - config.HIGH_RESP
+print(f"✓ Frequency gap: {gap:.2f} Hz ({gap*60:.1f} BPM)")
+```
+
+---
+
+## Benchmarking and Profiling
+
+### Comprehensive Benchmark
+
+```python
+import time
+import numpy as np
+import cv2
+from src.face_detector.manager import FaceDetector
+from src.evm.evm_manager import process_video_evm_vital_signs
+
+def comprehensive_benchmark():
+    """Benchmark all components of the EVM pipeline."""
+    
+    results = {}
+    
+    # 1. Face detection benchmark
+    print("Benchmarking face detection...")
+    detector = FaceDetector(model_type="mediapipe")
+    cap = cv2.VideoCapture(0)
+    
+    detection_times = []
+    for _ in range(100):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        start = time.time()
+        roi = detector.detect_face(frame)
+        detection_times.append(time.time() - start)
+    
+    results['detection_fps'] = 1 / np.mean(detection_times)
+    results['detection_time_ms'] = np.mean(detection_times) * 1000
+    
+    # 2. Frame collection
+    print("Collecting video frames...")
+    frames = []
+    frame_times = []
+    
+    for _ in range(200):
+        start = time.time()
+        ret, frame = cap.read()
+        frame_times.append(time.time() - start)
+        
+        if ret and roi:
+            x, y, w, h = roi
+            face_roi = frame[y:y+h, x:x+w]
+            # Resize to target size
+            from src.config import TARGET_ROI_SIZE
+            resized = cv2.resize(face_roi, TARGET_ROI_SIZE)
+            frames.append(resized)
+    
+    cap.release()
+    detector.close()
+    
+    results['capture_fps'] = 1 / np.mean(frame_times)
+    
+    # 3. EVM processing benchmark
+    if len(frames) >= 200:
+        print("Benchmarking EVM processing...")
+        
+        start = time.time()
+        vital_signs = process_video_evm_vital_signs(
+            frames, verbose=False
+        )
+        evm_time = time.time() - start
+        
+        results['evm_time_s'] = evm_time
+        results['evm_fps'] = len(frames) / evm_time
+        results['heart_rate'] = vital_signs.get('heart_rate')
+        results['respiratory_rate'] = vital_signs.get('respiratory_rate')
+    
+    # 4. End-to-end latency
+    results['total_latency_s'] = (
+        200 / results['capture_fps'] +  # Capture time
+        results['evm_time_s']           # Processing time
+    )
+    
+    # Print results
+    print("\n" + "="*50)
+    print("BENCHMARK RESULTS")
+    print("="*50)
+    print(f"Face Detection: {results['detection_fps']:.1f} FPS")
+    print(f"  - Avg time: {results['detection_time_ms']:.1f} ms")
+    print(f"\nFrame Capture: {results['capture_fps']:.1f} FPS")
+    print(f"\nEVM Processing: {results['evm_time_s']:.2f} seconds")
+    print(f"  - Throughput: {results['evm_fps']:.1f} FPS")
+    print(f"\nTotal Latency: {results['total_latency_s']:.2f} seconds")
+    print(f"\nMeasurements:")
+    print(f"  - HR: {results.get('heart_rate', 'N/A')} BPM")
+    print(f"  - RR: {results.get('respiratory_rate', 'N/A')} RPM")
+    print("="*50)
+    
+    return results
+
+if __name__ == "__main__":
+    comprehensive_benchmark()
+```
+
+### Profile with cProfile
+
+```python
+import cProfile
+import pstats
+from src.evm.evm_manager import process_video_evm_vital_signs
+
+# Collect frames (not shown)
+frames = [...]
+
+# Profile EVM processing
+profiler = cProfile.Profile()
+profiler.enable()
+
+results = process_video_evm_vital_signs(frames)
+
+profiler.disable()
+
+# Print top 20 time-consuming functions
+stats = pstats.Stats(profiler)
+stats.sort_stats('cumulative')
+stats.print_stats(20)
+```
+
+---
+
+## Memory Optimization
+
+### Explicit Memory Management
+
+```python
+import gc
+import numpy as np
+
+def optimized_processing_loop():
+    """Process video with explicit memory management.""\n    
+    detector = FaceDetector(model_type="mediapipe")
+    cap = cv2.VideoCapture(0)
+    
+    while True:
+        # Collect frames
+        frames = []
+        for _ in range(200):
+            ret, frame = cap.read()
+            if ret:
+                roi = detector.detect_face(frame)
+                if roi:
+                    x, y, w, h = roi
+                    face_roi = frame[y:y+h, x:x+w]
+                    frames.append(face_roi)
+        
+        # Process
+        if len(frames) >= 200:
+            results = process_video_evm_vital_signs(frames)
+            print(f"HR: {results.get('heart_rate', 'N/A')} BPM")
+        
+        # CRITICAL: Explicit cleanup
+        frames.clear()  # Clear list
+        frames = None   # Release reference
+        gc.collect()    # Force garbage collection
+        
+        # Small delay
+        time.sleep(0.1)
+```
+
+### Reduce NumPy Copies
+
+```python
+# Bad: Creates multiple copies
+resized = cv2.resize(frame, TARGET_ROI_SIZE)
+array = np.array(resized)  # Unnecessary copy
+processed = array.copy()   # Another copy
+
+# Good: Minimize copies
+resized = cv2.resize(frame, TARGET_ROI_SIZE)
+# Process in-place when possible
+resized *= amplification_factor  # In-place operation
+```
+
+---
+
+## Configuration Profiles
+
+Pre-configured optimization profiles for common scenarios:
+
+```python
+# optimization_profiles.py
+
+PROFILES = {
+    "raspberry_pi_realtime": {
+        "LEVELS_RPI": 3,
+        "TARGET_ROI_SIZE": (320, 240),
+        "ALPHA_HR": 30,
+        "ALPHA_RR": 50,
+        "detector": "mediapipe",
+    },
+    
+    "raspberry_pi_quality": {
+        "LEVELS_RPI": 4,
+        "TARGET_ROI_SIZE": (480, 360),
+        "ALPHA_HR": 30,
+        "ALPHA_RR": 50,
+        "detector": "yolo",
+        "yolo_preset": "yolov8n",
+    },
+    
+    "desktop_realtime": {
+        "LEVELS_RPI": 4,
+        "TARGET_ROI_SIZE": (480, 360),
+        "ALPHA_HR": 30,
+        "ALPHA_RR": 50,
+        "detector": "yolo",
+        "yolo_preset": "yolov8n",
+    },
+    
+    "desktop_research": {
+        "LEVELS_RPI": 5,
+        "TARGET_ROI_SIZE": (640, 480),
+        "ALPHA_HR": 30,
+        "ALPHA_RR": 50,
+        "detector": "mtcnn",
+        "buffer_size": 300,
+    },
+    
+    "battery_powered": {
+        "LEVELS_RPI": 2,
+        "TARGET_ROI_SIZE": (240, 180),
+        "ALPHA_HR": 35,  # Compensate for low resolution
+        "ALPHA_RR": 60,
+        "detector": "haar",
+    },
+}
+
+def apply_profile(profile_name):
+    """Apply optimization profile."""
+    if profile_name not in PROFILES:
+        raise ValueError(f"Unknown profile: {profile_name}")
+    
+    profile = PROFILES[profile_name]
+    
+    # Update config
+    import src.config as config
+    for key, value in profile.items():
+        if hasattr(config, key.upper()):
+            setattr(config, key.upper(), value)
+    
+    print(f"✓ Applied profile: {profile_name}")
+    return profile
+```
+
+Usage:
+
+```python
+from optimization_profiles import apply_profile
+
+# Apply profile based on deployment
+apply_profile("raspberry_pi_realtime")
+
+# Then run your code normally
+from src.face_detector.manager import FaceDetector
+detector = FaceDetector(model_type="mediapipe")
+```
+
+---
+
+## Related Resources
+
+- [Configuration Guide](/guides/configuration) - Detailed parameter reference
+- [Raspberry Pi Deployment](/guides/raspberry-pi-deployment) - RPi-specific optimizations
+- [Choosing a Detector](/guides/choosing-detector) - Detector performance comparison
+- [EVM Core API](/api/evm-core) - Low-level API reference

@@ -1,0 +1,236 @@
+---
+title: MediaPipeDetector
+description: Face detector using MediaPipe's face detection model for balanced speed and accuracy
+---
+
+## Overview
+
+The `MediaPipeDetector` class uses Google's MediaPipe face detection model with the short-range configuration. It provides fast, accurate face detection and returns bounding box coordinates for the highest-confidence face.
+
+## Initialization
+
+```python
+from src.face_detector.mediapipe_detector import MediaPipeDetector
+
+detector = MediaPipeDetector()
+```
+
+No parameters required - uses default MediaPipe configuration.
+
+## Attributes
+
+<ResponseField name="mp_face_detection" type="mediapipe.solutions.face_detection">
+  MediaPipe face detection module.
+</ResponseField>
+
+<ResponseField name="detector" type="FaceDetection">
+  MediaPipe face detection instance configured with:
+  - `model_selection=0` (short-range model, optimized for faces within 2 meters)
+  - `min_detection_confidence=0.5` (50% confidence threshold)
+</ResponseField>
+
+## Methods
+
+### detect()
+
+Detects a face in the given frame.
+
+```python
+roi = detector.detect(frame)
+if roi:
+    x, y, width, height = roi
+    face = frame[y:y+height, x:x+width]
+```
+
+<ParamField path="frame" type="numpy.ndarray" required>
+  Input image in BGR format (OpenCV default). Will be automatically converted to RGB internally.
+</ParamField>
+
+<ResponseField name="return" type="tuple | None">
+  Bounding box as `(x, y, width, height)` in pixels, or None if no face detected.
+  
+  Returns only the first (highest confidence) detection.
+  - `x`: X-coordinate of top-left corner
+  - `y`: Y-coordinate of top-left corner  
+  - `width`: Width of bounding box
+  - `height`: Height of bounding box
+</ResponseField>
+
+### close()
+
+Cleanup method (no actual cleanup needed for MediaPipe).
+
+```python
+detector.close()
+```
+
+## Usage Example
+
+### Basic Detection
+
+```python
+import cv2
+from src.face_detector.mediapipe_detector import MediaPipeDetector
+
+# Initialize detector
+detector = MediaPipeDetector()
+
+# Read image
+frame = cv2.imread('photo.jpg')
+
+# Detect face
+roi = detector.detect(frame)
+
+if roi:
+    x, y, width, height = roi
+    print(f"Face found at ({x}, {y}) with size {width}x{height}")
+    
+    # Extract face region
+    face_region = frame[y:y+height, x:x+width]
+    
+    # Draw bounding box
+    cv2.rectangle(frame, (x, y), (x+width, y+height), (0, 255, 0), 2)
+    cv2.imshow('Detection', frame)
+    cv2.waitKey(0)
+else:
+    print("No face detected")
+
+detector.close()
+cv2.destroyAllWindows()
+```
+
+### Video Processing
+
+```python
+import cv2
+from src.face_detector.mediapipe_detector import MediaPipeDetector
+
+detector = MediaPipeDetector()
+cap = cv2.VideoCapture(0)
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        roi = detector.detect(frame)
+        
+        if roi:
+            x, y, w, h = roi
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            cv2.putText(frame, 'Face', (x, y-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        
+        cv2.imshow('MediaPipe Detection', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    cap.release()
+    detector.close()
+    cv2.destroyAllWindows()
+```
+
+### With FaceDetector Manager
+
+Recommended usage through the unified manager:
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Automatically uses MediaPipeDetector with stabilization
+detector = FaceDetector(model_type='mediapipe')
+roi = detector.detect_face(frame)  # Includes stabilization
+detector.close()
+```
+
+## Performance Characteristics
+
+### Speed
+- **Average FPS**: ~25 FPS (from experiments)
+- **Detection Time**: ~40ms per frame on typical hardware
+- **Real-time capable**: Yes, suitable for live video
+
+### Accuracy
+- **Model**: Short-range model optimized for faces within 2 meters
+- **Confidence Threshold**: 0.5 (50%)
+- **Detection Quality**: High accuracy for frontal faces
+- **Robustness**: Good performance in various lighting conditions
+
+### Use Cases
+
+Best suited for:
+- Real-time video processing
+- Webcam applications
+- Mobile/embedded devices
+- Balanced speed and accuracy requirements
+- Close-range face detection (within 2 meters)
+
+## Implementation Details
+
+### Color Space Conversion
+
+MediaPipe requires RGB input, so BGR frames from OpenCV are automatically converted:
+
+```python
+rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+results = self.detector.process(rgb_frame)
+```
+
+### Coordinate Conversion
+
+MediaPipe returns normalized coordinates (0-1 range) which are converted to pixel coordinates:
+
+```python
+bbox = detection.location_data.relative_bounding_box
+h, w = frame.shape[:2]
+x = int(bbox.xmin * w)
+y = int(bbox.ymin * h)
+width = int(bbox.width * w)
+height = int(bbox.height * h)
+```
+
+### Single Face Detection
+
+Only the first detection is returned (highest confidence):
+
+```python
+if results.detections:
+    detection = results.detections[0]  # First detection only
+    # ... process detection
+```
+
+## Configuration
+
+The detector uses fixed configuration:
+- **Model Selection**: 0 (short-range model for faces < 2m)
+- **Min Detection Confidence**: 0.5 (50%)
+
+For different configurations, you would need to modify the `__init__` method:
+
+```python
+# Example: Custom configuration (requires code modification)
+def __init__(self, model_selection=0, min_confidence=0.5):
+    self.mp_face_detection = mp.solutions.face_detection
+    self.detector = self.mp_face_detection.FaceDetection(
+        model_selection=model_selection,  # 0: short-range, 1: full-range
+        min_detection_confidence=min_confidence
+    )
+```
+
+## Comparison with Other Detectors
+
+| Feature | MediaPipe | Haar | MTCNN | YOLO |
+|---------|-----------|------|-------|------|
+| Speed | Fast (~25 FPS) | Fastest (~30+ FPS) | Slow (~10 FPS) | Moderate (~15 FPS) |
+| Accuracy | Very Good | Good | Excellent | Excellent |
+| Resource Usage | Low | Very Low | High | Moderate |
+| Best For | Real-time balanced | Low-power devices | Maximum accuracy | High accuracy |
+
+<Tip>
+  MediaPipe is recommended for most real-time applications as it provides the best balance between speed and accuracy.
+</Tip>
+
+<Note>
+  From `experiments/simple_run_ROI.py`: MediaPipe achieves consistent ~25 FPS performance in benchmarks.
+</Note>

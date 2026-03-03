@@ -1,0 +1,377 @@
+---
+title: MTCNNDetector  
+description: High-accuracy face detector using Multi-task Cascaded Convolutional Networks
+---
+
+## Overview
+
+The `MTCNNDetector` class uses MTCNN (Multi-task Cascaded Convolutional Networks) for face detection. It provides the highest accuracy among available detectors, with configurable confidence thresholds.
+
+## Initialization
+
+```python
+from src.face_detector.mtcnn_detector import MTCNNDetector
+
+# Default confidence threshold (0.9)
+detector = MTCNNDetector()
+
+# Custom confidence threshold
+detector = MTCNNDetector(min_confidence=0.95)
+```
+
+<ParamField path="min_confidence" type="float" default="0.9">
+  Minimum confidence score (0-1) for a detection to be considered valid.
+  
+  - Higher values (0.95+): Fewer false positives, may miss some faces
+  - Lower values (0.7-0.8): More detections, higher false positive rate
+  - Default: 0.9 (90%) provides excellent balance
+</ParamField>
+
+## Attributes
+
+<ResponseField name="detector" type="MTCNN">
+  MTCNN detector instance from the `mtcnn` package.
+</ResponseField>
+
+<ResponseField name="min_confidence" type="float">
+  Minimum confidence threshold for valid detections (0-1 range).
+</ResponseField>
+
+## Methods
+
+### detect()
+
+Detects a face in the given frame.
+
+```python
+roi = detector.detect(frame)
+if roi:
+    x, y, width, height = roi
+    face = frame[y:y+height, x:x+width]
+```
+
+<ParamField path="frame" type="numpy.ndarray" required>
+  Input image in BGR format (OpenCV default).
+  
+  Will be automatically converted to RGB internally for MTCNN processing.
+</ParamField>
+
+<ResponseField name="return" type="tuple | None">
+  Bounding box as `(x, y, width, height)` in pixels, or None if no face meets confidence threshold.
+  
+  Returns only the first (highest confidence) detection that exceeds `min_confidence`.
+  - `x`: X-coordinate of top-left corner
+  - `y`: Y-coordinate of top-left corner
+  - `width`: Width of bounding box
+  - `height`: Height of bounding box
+</ResponseField>
+
+### close()
+
+Cleanup method (no actual cleanup needed for MTCNN).
+
+```python
+detector.close()
+```
+
+## Usage Examples
+
+### Basic Detection
+
+```python
+import cv2
+from src.face_detector.mtcnn_detector import MTCNNDetector
+
+# Initialize detector
+detector = MTCNNDetector(min_confidence=0.9)
+
+# Read image
+frame = cv2.imread('photo.jpg')
+
+# Detect face
+roi = detector.detect(frame)
+
+if roi:
+    x, y, width, height = roi
+    print(f"Face found at ({x}, {y}) with size {width}x{height}")
+    
+    # Extract face region
+    face_region = frame[y:y+height, x:x+width]
+    
+    # Draw bounding box
+    cv2.rectangle(frame, (x, y), (x+width, y+height), (0, 0, 255), 2)
+    cv2.imshow('MTCNN Detection', frame)
+    cv2.waitKey(0)
+else:
+    print("No face detected")
+
+detector.close()
+cv2.destroyAllWindows()
+```
+
+### High Confidence Detection
+
+```python
+from src.face_detector.mtcnn_detector import MTCNNDetector
+
+# Very high confidence threshold for critical applications
+detector = MTCNNDetector(min_confidence=0.95)
+
+roi = detector.detect(frame)
+# Only returns faces with >95% confidence
+```
+
+### Sensitive Detection
+
+```python
+from src.face_detector.mtcnn_detector import MTCNNDetector
+
+# Lower threshold to detect more faces
+detector = MTCNNDetector(min_confidence=0.7)
+
+roi = detector.detect(frame)
+# More detections, but may include some false positives
+```
+
+### Video Processing
+
+```python
+import cv2
+from src.face_detector.mtcnn_detector import MTCNNDetector
+
+detector = MTCNNDetector(min_confidence=0.9)
+cap = cv2.VideoCapture('video.mp4')
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        roi = detector.detect(frame)
+        
+        if roi:
+            x, y, w, h = roi
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            cv2.putText(frame, 'MTCNN', (x, y-10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        
+        cv2.imshow('MTCNN Detection', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    cap.release()
+    detector.close()
+    cv2.destroyAllWindows()
+```
+
+### With FaceDetector Manager
+
+Recommended usage through the unified manager:
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Default MTCNN (0.9 confidence)
+detector = FaceDetector(model_type='mtcnn')
+
+# Custom confidence threshold
+detector = FaceDetector(
+    model_type='mtcnn',
+    min_confidence=0.95
+)
+
+roi = detector.detect_face(frame)  # Includes stabilization
+detector.close()
+```
+
+## Performance Characteristics
+
+### Speed
+- **Average FPS**: ~10 FPS (slowest detector)
+- **Detection Time**: ~100ms per frame on typical hardware
+- **Real-time capable**: Limited - best for offline processing
+
+### Accuracy
+- **Detection Quality**: Excellent - highest accuracy
+- **False Positives**: Very low with default 0.9 threshold
+- **Robustness**: Handles various angles, lighting, and occlusions well
+- **Profile Faces**: Better than Haar, comparable to YOLO
+
+### Resource Usage
+- **CPU Usage**: High
+- **Memory**: Higher than MediaPipe/Haar
+- **GPU**: Can leverage GPU for faster processing
+- **Best For**: Offline processing, maximum accuracy requirements
+
+## Implementation Details
+
+### Color Space Conversion
+
+MTCNN requires RGB input, so BGR frames are converted:
+
+```python
+rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+detections = self.detector.detect_faces(rgb)
+```
+
+### Confidence Filtering
+
+Only detections meeting the confidence threshold are returned:
+
+```python
+if detections and detections[0]['confidence'] > self.min_confidence:
+    return tuple(detections[0]['box'])
+return None
+```
+
+### Bounding Box Format
+
+MTCNN returns `{'box': [x, y, width, height], 'confidence': score}`:
+
+```python
+# Direct conversion to tuple
+return tuple(detections[0]['box'])
+```
+
+### Single Face Detection
+
+Only the first (highest confidence) detection is processed:
+
+```python
+detections = self.detector.detect_faces(rgb)
+if detections:  # List of detections
+    detection = detections[0]  # First detection only
+```
+
+## Confidence Threshold Guide
+
+| Threshold | False Positives | Missed Faces | Use Case |
+|-----------|----------------|--------------|----------|
+| 0.6-0.7 | Higher | Fewer | Maximize detections |
+| 0.8-0.85 | Moderate | Some | Balanced approach |
+| 0.9 | Low | Occasional | Recommended default |
+| 0.95+ | Very low | More | Critical applications |
+
+## Use Cases
+
+### Ideal For:
+- **Offline Video Processing**: Accuracy over speed
+- **Face Recognition Preprocessing**: High-quality face extraction
+- **Security Applications**: Low false positive tolerance
+- **Challenging Conditions**: Poor lighting, angles, partial occlusions
+- **Quality over Speed**: When accuracy is paramount
+
+### Not Recommended For:
+- **Real-time Webcam**: Too slow for smooth video
+- **Embedded Devices**: Resource requirements too high
+- **High FPS Requirements**: Cannot maintain 30+ FPS
+- **Battery-Powered Devices**: High power consumption
+
+## Accuracy vs Performance Tradeoffs
+
+### Maximum Accuracy
+```python
+detector = MTCNNDetector(min_confidence=0.95)
+# Pros: Highest precision, very few false positives
+# Cons: May miss some valid faces, ~10 FPS
+```
+
+### Balanced
+```python
+detector = MTCNNDetector(min_confidence=0.9)  # Default
+# Pros: Excellent accuracy, reasonable false positive rate
+# Cons: Still slower than MediaPipe/Haar
+```
+
+### Maximum Recall
+```python
+detector = MTCNNDetector(min_confidence=0.7)
+# Pros: Detects more faces
+# Cons: Higher false positive rate, still slow
+```
+
+## Comparison with Other Detectors
+
+| Feature | MTCNN | YOLO | MediaPipe | Haar |
+|---------|-------|------|-----------|------|
+| Speed | Slow (10 FPS) | Moderate (15 FPS) | Fast (25 FPS) | Fastest (30+ FPS) |
+| Accuracy | Excellent | Excellent | Very Good | Good |
+| Profile Faces | Very Good | Very Good | Good | Poor |
+| Lighting Robustness | Excellent | Excellent | Very Good | Fair |
+| False Positives | Very Low | Very Low | Low | Moderate |
+| Resource Usage | High | Moderate | Low | Very Low |
+| Best For | Max accuracy | Balanced | Real-time | Embedded |
+
+## MTCNN Architecture
+
+MTCNN uses a three-stage cascade:
+
+1. **P-Net (Proposal Network)**: Fast scanning for candidate regions
+2. **R-Net (Refine Network)**: Refines candidates and rejects false positives
+3. **O-Net (Output Network)**: Final detection with facial landmarks
+
+This cascade architecture provides excellent accuracy but requires more computation.
+
+## Common Patterns
+
+### Batch Processing Videos
+```python
+import cv2
+import os
+from src.face_detector.mtcnn_detector import MTCNNDetector
+
+detector = MTCNNDetector(min_confidence=0.9)
+
+for video_file in os.listdir('videos/'):
+    cap = cv2.VideoCapture(f'videos/{video_file}')
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        roi = detector.detect(frame)
+        if roi:
+            # Process face
+            pass
+    
+    cap.release()
+
+detector.close()
+```
+
+### Quality Face Extraction
+```python
+from src.face_detector.mtcnn_detector import MTCNNDetector
+import cv2
+
+detector = MTCNNDetector(min_confidence=0.95)
+
+frame = cv2.imread('photo.jpg')
+roi = detector.detect(frame)
+
+if roi:
+    x, y, w, h = roi
+    # Add padding for better face extraction
+    padding = 20
+    x = max(0, x - padding)
+    y = max(0, y - padding)
+    w = min(frame.shape[1] - x, w + 2*padding)
+    h = min(frame.shape[0] - y, h + 2*padding)
+    
+    face = frame[y:y+h, x:x+w]
+    cv2.imwrite('extracted_face.jpg', face)
+```
+
+<Tip>
+  Use MTCNN when accuracy is more important than speed. For real-time applications, consider MediaPipe or YOLO instead.
+</Tip>
+
+<Warning>
+  MTCNN's ~10 FPS performance makes it unsuitable for real-time webcam applications. Use it for offline video processing or when you can accept lower frame rates.
+</Warning>
+
+<Note>
+  The default 0.9 confidence threshold provides excellent accuracy while maintaining reasonable detection rates. Adjust based on your specific accuracy vs recall requirements.
+</Note>

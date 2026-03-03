@@ -1,122 +1,93 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "EVM Vital Signs Monitor",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0891B2",
+    "light": "#06B6D4",
+    "dark": "#0E7490"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Daval03/Eulerian-Vitals-Extraction"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Daval03/Eulerian-Vitals-Extraction"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "installation"]
+          },
+          {
+            "group": "Core Concepts",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "concepts/overview",
+              "concepts/eulerian-video-magnification",
+              "concepts/signal-processing",
+              "concepts/face-detection"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Guides",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "guides/configuration",
+              "guides/choosing-detector",
+              "guides/raspberry-pi-deployment",
+              "guides/performance-optimization"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Benchmarking",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "benchmarking/overview",
+              "benchmarking/running-benchmarks",
+              "benchmarking/metrics",
+              "benchmarking/dataset"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Face Detection",
             "pages": [
-              "api-reference/introduction"
+              "api/face-detector",
+              "api/mediapipe-detector",
+              "api/yolo-detector",
+              "api/haar-detector",
+              "api/mtcnn-detector"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "EVM Processing",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/evm-manager",
+              "api/evm-core",
+              "api/pyramid-processing",
+              "api/temporal-filtering",
+              "api/signal-analysis"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/config",
+              "api/ground-truth-handler"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

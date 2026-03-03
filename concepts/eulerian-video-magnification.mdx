@@ -1,0 +1,375 @@
+---
+title: 'Eulerian Video Magnification'
+description: 'Understanding the EVM technique and its dual-band implementation for vital signs monitoring'
+---
+
+## What is Eulerian Video Magnification?
+
+Eulerian Video Magnification (EVM) is a computational technique that reveals temporal variations in videos that are impossible to see with the naked eye. Unlike Lagrangian methods that track individual pixels, EVM analyzes temporal variations at fixed spatial positions (Eulerian perspective).
+
+<Info>
+  EVM can amplify color changes as small as 0.1% of the original intensity, making subtle physiological signals visible.
+</Info>
+
+### Key Principles
+
+<CardGroup cols={2}>
+  <Card title="Spatial Decomposition" icon="layer-group">
+    Uses Laplacian pyramids to separate different spatial frequency bands
+  </Card>
+  
+  <Card title="Temporal Filtering" icon="filter">
+    Isolates specific frequency ranges corresponding to physiological processes
+  </Card>
+  
+  <Card title="Signal Amplification" icon="arrow-up">
+    Multiplies filtered signals by amplification factor (α) to enhance visibility
+  </Card>
+  
+  <Card title="Reconstruction" icon="puzzle-piece">
+    Combines amplified signals back into video or extracts temporal signatures
+  </Card>
+</CardGroup>
+
+## EVM for Vital Signs Monitoring
+
+In the context of vital signs monitoring, EVM exploits two physiological phenomena:
+
+1. **Cardiac pulse**: Blood volume changes cause subtle color variations in skin (photoplethysmography)
+2. **Respiration**: Chest and facial movements create subtle motion and color changes
+
+### Frequency Characteristics
+
+| Signal | Frequency Range (Hz) | Frequency Range (BPM) | Typical Value |
+|--------|---------------------|----------------------|---------------|
+| Heart Rate | 0.8 - 3.0 | 48 - 180 | 60-100 BPM |
+| Respiratory Rate | 0.2 - 0.8 | 12 - 48 | 12-20 breaths/min |
+
+<Note>
+  These non-overlapping frequency ranges allow simultaneous extraction of both vital signs from the same video stream.
+</Note>
+
+## Dual-Band Processing Architecture
+
+The EVM Vital Signs Monitor implements an optimized **dual-band processing** approach that extracts both HR and RR in a single pass through the video data.
+
+### Single-Pass Optimization
+
+```python
+class EVMProcessor:
+    """
+    Processor for Eulerian Video Magnification (EVM) with optimized configuration.
+    
+    Performs single-pass dual-band processing:
+    - Builds Laplacian pyramids once
+    - Applies two separate temporal filters (HR and RR frequency bands)
+    - Amplifies each band with its corresponding alpha factor
+    - Extracts both heart rate (HR) and respiratory rate (RR) temporal signals
+    """
+    
+    def __init__(self, levels=LEVELS_RPI, alpha_hr=ALPHA_HR, alpha_rr=ALPHA_RR):
+        self.levels = levels
+        self.alpha_hr = alpha_hr  # Default: 30
+        self.alpha_rr = alpha_rr  # Default: 50
+```
+
+**Source**: `src/evm/evm_core.py:16-38`
+
+### Processing Pipeline
+
+The `process_dual_band()` method implements the complete EVM pipeline:
+
+<Steps>
+  <Step title="Pyramid Construction">
+    Build Laplacian pyramid stack from all video frames **once**:
+    
+    ```python
+    # STEP 1: Build Laplacian pyramids (SINGLE PASS)
+    laplacian_pyramids = build_video_pyramid_stack(
+        video_frames, levels=self.levels
+    )
+    ```
+    
+    **Source**: `src/evm/evm_core.py:74-77`
+  </Step>
+  
+  <Step title="Level Selection">
+    Select optimal pyramid levels for each signal type:
+    
+    ```python
+    # STEP 2: Select optimal pyramid level for each signal
+    level_hr = min(3, num_levels - 1)  # HR: level 3 (higher spatial freq)
+    level_rr = min(2, num_levels - 1)  # RR: level 2 (lower spatial freq)
+    ```
+    
+    **Why different levels?**
+    - Higher pyramid levels (smaller spatial scale) better capture rapid color changes from pulse
+    - Lower pyramid levels (larger spatial scale) better capture slower motion from breathing
+    
+    **Source**: `src/evm/evm_core.py:82-83`
+  </Step>
+  
+  <Step title="Tensor Extraction">
+    Extract 4D tensors (Time × Height × Width × Channels) from selected levels:
+    
+    ```python
+    # STEP 3: Extract tensor data from each pyramid level
+    tensor_hr = extract_pyramid_level(laplacian_pyramids, level_hr)
+    tensor_rr = extract_pyramid_level(laplacian_pyramids, level_rr)
+    ```
+    
+    The tensors contain the temporal evolution of each spatial location across all frames.
+    
+    **Source**: `src/evm/evm_core.py:86-87`
+  </Step>
+  
+  <Step title="Temporal Filtering">
+    Apply bandpass filters to isolate physiological frequency ranges:
+    
+    ```python
+    # STEP 4: Separate temporal filtering per frequency band
+    filtered_tensor_hr = apply_temporal_bandpass(
+        tensor_hr, LOW_HEART, HIGH_HEART, FPS, axis=0  # HR band: 0.8-3 Hz
+    )
+    
+    filtered_tensor_rr = apply_temporal_bandpass(
+        tensor_rr, LOW_RESP, HIGH_RESP, FPS, axis=0   # RR band: 0.2-0.8 Hz
+    )
+    ```
+    
+    Butterworth bandpass filters remove DC components and high-frequency noise.
+    
+    **Source**: `src/evm/evm_core.py:90-96`
+  </Step>
+  
+  <Step title="Amplification">
+    Multiply filtered signals by amplification factors:
+    
+    ```python
+    # STEP 5: Signal amplification
+    filtered_tensor_hr *= self.alpha_hr  # α = 30
+    filtered_tensor_rr *= self.alpha_rr  # α = 50
+    ```
+    
+    Higher α for respiratory signals compensates for their lower natural amplitude.
+    
+    **Source**: `src/evm/evm_core.py:99-100`
+  </Step>
+  
+  <Step title="Signal Extraction">
+    Spatially average each frame to extract 1D temporal signals:
+    
+    ```python
+    # STEP 6: Extract temporal signals
+    # HR: Green channel (best SNR for pulse)
+    signal_hr = extract_temporal_signal(filtered_tensor_hr, use_green_channel=True)
+    
+    # RR: All channels average
+    signal_rr = extract_temporal_signal(filtered_tensor_rr, use_green_channel=True)
+    ```
+    
+    Green channel provides best signal-to-noise ratio for photoplethysmography.
+    
+    **Source**: `src/evm/evm_core.py:103-107`
+  </Step>
+</Steps>
+
+## Laplacian Pyramid Construction
+
+### Gaussian Pyramid
+
+The Gaussian pyramid progressively downsamples the image:
+
+```python
+def build_gaussian_pyramid(frame, levels=LEVELS_RPI):
+    pyramid = []
+    current = frame.astype(np.float32)
+    pyramid.append(current)
+    
+    for _ in range(levels):
+        current = cv2.pyrDown(current)  # Gaussian blur + 2x downsample
+        pyramid.append(current)
+    
+    return pyramid
+```
+
+**Source**: `src/evm/pyramid_processing.py:8-34`
+
+### Laplacian Pyramid
+
+The Laplacian pyramid captures details lost in downsampling:
+
+```python
+def build_laplacian_pyramid(gaussian_pyramid):
+    laplacian_pyramid = []
+    
+    for i in range(len(gaussian_pyramid) - 1):
+        size = (gaussian_pyramid[i].shape[1], gaussian_pyramid[i].shape[0])
+        expanded = cv2.pyrUp(gaussian_pyramid[i + 1], dstsize=size)
+        laplacian = cv2.subtract(gaussian_pyramid[i], expanded)
+        laplacian_pyramid.append(laplacian)
+    
+    # Last level is the same as Gaussian
+    laplacian_pyramid.append(gaussian_pyramid[-1])
+    
+    return laplacian_pyramid
+```
+
+**Source**: `src/evm/pyramid_processing.py:37-66`
+
+<Accordion title="Why Laplacian Pyramids?">
+  Laplacian pyramids provide several advantages:
+  
+  - **Bandpass filtering**: Each level captures a specific range of spatial frequencies
+  - **Computational efficiency**: Smaller pyramid levels process faster
+  - **Reduced noise**: High-frequency noise is separated into upper levels
+  - **Better amplification**: Can apply different α values to different levels
+</Accordion>
+
+## Pyramid Level Extraction
+
+The `extract_pyramid_level()` function collects a specific pyramid level across all frames:
+
+```python
+def extract_pyramid_level(pyramid_stack, level):
+    """
+    Extract specific level from all pyramids and normalize dimensions.
+    
+    Returns:
+        np.ndarray: Tensor (T x H x W x C) of specified pyramid level
+    """
+    level_frames = []
+    
+    for pyr in pyramid_stack:
+        if level < len(pyr):
+            level_frames.append(pyr[level])
+        else:
+            level_frames.append(pyr[-1])  # Fallback to last level
+    
+    # Determine target shape (most common shape)
+    shapes = [frame.shape for frame in level_frames]
+    target_shape = most_common(shapes)
+    
+    # Resize frames to target shape if needed
+    level_resized = []
+    for frame in level_frames:
+        if frame.shape != target_shape:
+            frame = cv2.resize(frame, (target_shape[1], target_shape[0]))
+        level_resized.append(frame)
+    
+    return np.array(level_resized, dtype=np.float32)
+```
+
+**Source**: `src/evm/pyramid_processing.py:129-174`
+
+<Warning>
+  The function includes dimension normalization to handle edge cases where pyramid levels might have slightly different dimensions due to rounding in downsampling.
+</Warning>
+
+## Amplification Factor Selection
+
+The amplification factor (α) is critical for balancing signal enhancement and noise:
+
+### Heart Rate (α = 30)
+
+```python
+ALPHA_HR = 30  # Amplification factor for heart rate band
+```
+
+- Moderate amplification suitable for subtle color changes
+- Too high → motion artifacts become visible
+- Too low → insufficient signal for reliable frequency detection
+
+### Respiratory Rate (α = 50)
+
+```python
+ALPHA_RR = 50  # Amplification factor for respiratory rate band
+```
+
+- Higher amplification needed for lower-frequency signals
+- Respiratory signals have naturally lower amplitude
+- Lower frequency range is less susceptible to motion artifacts
+
+**Source**: `src/config.py:3-10`
+
+## Performance Characteristics
+
+### Computational Complexity
+
+<AccordionGroup>
+  <Accordion title="Traditional Two-Pass Approach">
+    - **Pyramid construction**: O(N × M × L) per pass × 2 passes
+    - **Temporal filtering**: O(N × M × L) per band × 2 bands
+    - **Total**: ~2× the work needed
+    
+    Where:
+    - N = number of frames
+    - M = pixels per frame
+    - L = pyramid levels
+  </Accordion>
+  
+  <Accordion title="Optimized Single-Pass Approach">
+    - **Pyramid construction**: O(N × M × L) once
+    - **Level extraction**: O(N × M/4^l) per level
+    - **Temporal filtering**: O(N × M/4^l) per band
+    - **Total**: ~50-60% faster
+    
+    The key savings come from:
+    1. Single pyramid construction
+    2. Processing smaller tensors (downsampled levels)
+    3. Parallel filtering of independent bands
+  </Accordion>
+</AccordionGroup>
+
+### Memory Usage
+
+```python
+# Typical memory footprint for 30 frames @ 320x240 resolution:
+frames = 30 × 320 × 240 × 3 bytes = 6.9 MB (input)
+pyramids = frames × (1 + 0.25 + 0.0625 + ...) ≈ 9.2 MB
+level_3 = 30 × 40 × 30 × 3 × 4 bytes = 432 KB
+level_2 = 30 × 80 × 60 × 3 × 4 bytes = 1.7 MB
+```
+
+<Note>
+  The system maintains only one pyramid stack in memory, significantly reducing memory footprint compared to dual-pass approaches.
+</Note>
+
+## Usage Example
+
+```python
+from src.evm.evm_manager import process_video_evm_vital_signs
+
+# Process video frames
+video_frames = [...]  # List of BGR frames from ROI
+
+results = process_video_evm_vital_signs(video_frames, verbose=True)
+
+if results['heart_rate']:
+    print(f"Heart Rate: {results['heart_rate']:.1f} BPM")
+
+if results['respiratory_rate']:
+    print(f"Respiratory Rate: {results['respiratory_rate']:.1f} RPM")
+```
+
+**Source**: `src/evm/evm_manager.py:12-103`
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Signal Processing" icon="wave-square" href="/concepts/signal-processing">
+    Learn about temporal filtering and FFT analysis
+  </Card>
+  
+  <Card title="Face Detection" icon="face-smile" href="/concepts/face-detection">
+    Understand ROI extraction and stabilization
+  </Card>
+  
+  <Card title="System Overview" icon="diagram-project" href="/concepts/overview">
+    See how EVM fits into the overall architecture
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference/evm/evm-processor">
+    Explore the EVMProcessor API
+  </Card>
+</CardGroup>

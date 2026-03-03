@@ -1,0 +1,345 @@
+---
+title: "Ground Truth Handler"
+description: "Ground truth data handling for benchmarking and validation"
+---
+
+The `GroundTruthHandler` class and `setup_ground_truth()` utility function manage ground truth data for comparing EVM measurements against reference values during benchmarking.
+
+## GroundTruthHandler Class
+
+Handles loading and processing of ground truth heart rate data from reference files.
+
+### Constructor
+
+```python
+from src.utils.ground_truth_handler import GroundTruthHandler
+
+gt_handler = GroundTruthHandler(gt_path, frame_chunk_size)
+```
+
+<ParamField path="gt_path" type="str" required>
+  Path to the ground truth file containing reference heart rate measurements.
+  Expected format: Text file with heart rate values in the second row.
+</ParamField>
+
+<ParamField path="frame_chunk_size" type="int" required>
+  Size of frame chunks for averaging ground truth values.
+  Should match the buffer size used in EVM processing.
+</ParamField>
+
+### Methods
+
+#### load_ground_truth()
+
+Loads and processes ground truth data from the file.
+
+```python
+success = gt_handler.load_ground_truth()
+if success:
+    print("Ground truth loaded successfully")
+```
+
+**Returns:** `bool` - `True` if loaded successfully, `False` otherwise.
+
+**Behavior:**
+- Loads data from text file using `numpy.loadtxt()`
+- Extracts heart rate values from second row of data
+- Calculates chunk-averaged values automatically
+- Prints summary: `"✅ Ground Truth loaded: {n} points, {m} chunks"`
+
+#### get_hr_for_chunk(chunk_index)
+
+Retrieves ground truth heart rate value for a specific chunk.
+
+```python
+true_hr = gt_handler.get_hr_for_chunk(chunk_index)
+if true_hr is not None:
+    print(f"Ground truth HR for chunk {chunk_index}: {true_hr:.1f} BPM")
+```
+
+<ParamField path="chunk_index" type="int" required>
+  Index of the chunk (0-based).
+</ParamField>
+
+**Returns:** `float | None` - Ground truth heart rate value, or `None` if not available.
+
+#### calculate_error(estimated_hr, chunk_index)
+
+Calculates error between estimated and ground truth heart rate.
+
+```python
+error, true_hr = gt_handler.calculate_error(estimated_hr, chunk_index)
+if error is not None:
+    print(f"Absolute error: {error:.2f} BPM")
+```
+
+<ParamField path="estimated_hr" type="float" required>
+  Estimated heart rate value from EVM processing.
+</ParamField>
+
+<ParamField path="chunk_index" type="int" required>
+  Chunk index for comparison.
+</ParamField>
+
+**Returns:** `tuple[float, float] | tuple[None, None]` - `(absolute_error, ground_truth_value)` or `(None, None)` if unavailable.
+
+#### get_available_chunks_count()
+
+Returns the total number of available chunks in ground truth data.
+
+```python
+num_chunks = gt_handler.get_available_chunks_count()
+print(f"Total chunks available: {num_chunks}")
+```
+
+**Returns:** `int` - Number of available chunks.
+
+#### get_summary_stats()
+
+Provides summary statistics of ground truth data.
+
+```python
+stats = gt_handler.get_summary_stats()
+print(f"HR range: {stats['hr_min']:.1f} - {stats['hr_max']:.1f} BPM")
+print(f"Mean HR: {stats['hr_mean']:.1f} ± {stats['hr_std']:.1f} BPM")
+```
+
+**Returns:** `dict` with keys:
+- `total_points`: Total number of ground truth data points
+- `total_chunks`: Number of chunks after averaging
+- `hr_min`: Minimum heart rate in dataset
+- `hr_max`: Maximum heart rate in dataset
+- `hr_mean`: Mean heart rate
+- `hr_std`: Standard deviation of heart rate
+
+## setup_ground_truth() Function
+
+Quick setup utility for initializing ground truth for a specific subject.
+
+```python
+from src.utils.ground_truth_handler import setup_ground_truth
+
+gt_handler, video_path = setup_ground_truth(
+    subject_num=1,
+    dataset_path="/path/to/dataset",
+    buffer_size=200
+)
+```
+
+<ParamField path="subject_num" type="int" required>
+  Subject number identifier.
+</ParamField>
+
+<ParamField path="dataset_path" type="str" required>
+  Base path to the dataset directory.
+  Expected structure:
+  ```
+  dataset_path/
+    subject1/
+      vid.mp4
+      ground_truth.txt
+    subject2/
+      vid.mp4
+      ground_truth.txt
+  ```
+</ParamField>
+
+<ParamField path="buffer_size" type="int" required>
+  Frame chunk size (buffer size) used for averaging.
+  Should match the buffer size used in EVM processing.
+</ParamField>
+
+**Returns:** `tuple[GroundTruthHandler, str]` - Tuple containing:
+- `GroundTruthHandler` instance (already loaded)
+- `video_path`: Path to the corresponding video file
+
+**Behavior:**
+- Constructs file paths automatically: `{dataset_path}/subject{subject_num}/vid.mp4` and `ground_truth.txt`
+- Initializes `GroundTruthHandler` and calls `load_ground_truth()`
+- Prints warning if loading fails: `"⚠️ Could not load Ground Truth for subject {subject_num}"`
+
+## Usage Examples
+
+### Basic Usage with Class
+
+```python
+from src.utils.ground_truth_handler import GroundTruthHandler
+
+# Initialize handler
+gt_handler = GroundTruthHandler(
+    gt_path="/dataset/subject1/ground_truth.txt",
+    frame_chunk_size=200
+)
+
+# Load ground truth data
+if gt_handler.load_ground_truth():
+    # Get statistics
+    stats = gt_handler.get_summary_stats()
+    print(f"Loaded {stats['total_chunks']} chunks")
+    print(f"HR range: {stats['hr_min']:.1f} - {stats['hr_max']:.1f} BPM")
+    
+    # Compare measurements
+    for chunk_idx in range(stats['total_chunks']):
+        estimated_hr = 72.5  # From EVM processing
+        error, true_hr = gt_handler.calculate_error(estimated_hr, chunk_idx)
+        if error is not None:
+            print(f"Chunk {chunk_idx}: Error = {error:.2f} BPM")
+```
+
+### Quick Setup with Utility Function
+
+```python
+from src.utils.ground_truth_handler import setup_ground_truth
+from src.evm.evm_manager import process_video_evm_vital_signs
+import cv2
+
+# Setup ground truth and get video path
+gt_handler, video_path = setup_ground_truth(
+    subject_num=1,
+    dataset_path="/path/to/dataset",
+    buffer_size=200
+)
+
+# Process video and compare with ground truth
+cap = cv2.VideoCapture(video_path)
+frame_buffer = []
+chunk_index = 0
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    frame_buffer.append(frame)
+    
+    if len(frame_buffer) >= 200:
+        # Process chunk with EVM
+        results = process_video_evm_vital_signs(frame_buffer)
+        estimated_hr = results['heart_rate']
+        
+        # Compare with ground truth
+        error, true_hr = gt_handler.calculate_error(estimated_hr, chunk_index)
+        if error is not None:
+            print(f"Chunk {chunk_index}: Estimated={estimated_hr:.1f}, "
+                  f"True={true_hr:.1f}, Error={error:.2f} BPM")
+        
+        frame_buffer.clear()
+        chunk_index += 1
+
+cap.release()
+```
+
+### Benchmarking Example
+
+From `experiments/advance_run_complete.py:312`:
+
+```python
+from src.utils.ground_truth_handler import setup_ground_truth
+from src.evm.evm_manager import process_video_evm_vital_signs
+
+# Configuration
+DATASET_PATH = "/mnt/c/Self-Study/TFG/dataset_2"
+buffer_size = 200
+subject_num = 1
+
+# Setup ground truth handler
+gt_handler, _ = setup_ground_truth(subject_num, DATASET_PATH, buffer_size)
+
+# Process video chunks
+measurement_count = 0
+frame_buffer = []
+
+while True:
+    # ... collect frames into buffer ...
+    
+    if len(frame_buffer) >= buffer_size:
+        # Get ground truth for this chunk
+        true_hr = gt_handler.get_hr_for_chunk(measurement_count)
+        if true_hr is None:
+            break  # No more ground truth data
+        
+        # Process with EVM
+        results = process_video_evm_vital_signs(frame_buffer)
+        estimated_hr = results['heart_rate']
+        
+        # Calculate error metrics
+        error, _ = gt_handler.calculate_error(estimated_hr, measurement_count)
+        
+        measurement_count += 1
+        frame_buffer.clear()
+```
+
+### Error Accumulation
+
+```python
+from src.utils.ground_truth_handler import setup_ground_truth
+import numpy as np
+
+gt_handler, video_path = setup_ground_truth(
+    subject_num=1,
+    dataset_path="/dataset",
+    buffer_size=200
+)
+
+# Collect errors across all chunks
+errors = []
+for chunk_idx in range(gt_handler.get_available_chunks_count()):
+    estimated_hr = get_evm_measurement(chunk_idx)  # Your EVM processing
+    error, true_hr = gt_handler.calculate_error(estimated_hr, chunk_idx)
+    
+    if error is not None:
+        errors.append(error)
+
+# Calculate aggregate metrics
+if errors:
+    mae = np.mean(errors)
+    rmse = np.sqrt(np.mean(np.array(errors)**2))
+    print(f"Mean Absolute Error: {mae:.2f} BPM")
+    print(f"RMSE: {rmse:.2f} BPM")
+```
+
+## Ground Truth File Format
+
+The ground truth file should be a text file loadable by `numpy.loadtxt()` with heart rate values in the **second row**:
+
+```
+# Row 0: Frame indices or timestamps (optional)
+# Row 1: Heart rate values (BPM)
+0    1    2    3    4    5    ...
+72.5 73.1 72.8 74.2 73.5 72.9 ...
+```
+
+<Note>
+  The handler expects the second row (index 1) to contain heart rate values.
+  Ensure your ground truth files follow this format.
+</Note>
+
+## Error Handling
+
+```python
+from src.utils.ground_truth_handler import setup_ground_truth
+
+gt_handler, video_path = setup_ground_truth(
+    subject_num=1,
+    dataset_path="/dataset",
+    buffer_size=200
+)
+
+# Check if ground truth loaded successfully
+stats = gt_handler.get_summary_stats()
+if not stats:
+    print("Ground truth failed to load")
+    exit(1)
+
+# Handle missing chunk data
+chunk_idx = 10
+true_hr = gt_handler.get_hr_for_chunk(chunk_idx)
+if true_hr is None:
+    print(f"No ground truth available for chunk {chunk_idx}")
+    # Either skip or stop processing
+
+# Handle None values in error calculation
+error, true_hr = gt_handler.calculate_error(None, chunk_idx)
+if error is None:
+    print("Error calculation failed (missing data)")
+```

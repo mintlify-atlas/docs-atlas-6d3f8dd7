@@ -1,80 +1,386 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get up and running with EVM Vital Signs Monitor in minutes
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
+This guide will help you run your first vital signs measurement in just a few minutes.
 
-### Step 1: Set up your local environment
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Check>
+  Ensure you have Python 3.8 or higher installed on your system
+</Check>
+
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/your-org/evm-vital-signs-monitor.git
+    cd evm-vital-signs-monitor
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    This installs all required packages including OpenCV, NumPy, SciPy, MediaPipe, and Ultralytics.
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <Note>
+    Installation may take 5-10 minutes depending on your internet connection.
+    </Note>
+  </Step>
 
-### Step 2: Deploy your changes
+  <Step title="Verify installation">
+    ```bash
+    python -c "import cv2, mediapipe, numpy; print('All dependencies installed successfully!')"
+    ```
+  </Step>
+</Steps>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+## Your First Measurement
+
+Let's run a simple example that detects faces in a video and estimates heart rate.
+
+<Steps>
+  <Step title="Navigate to experiments folder">
+    ```bash
+    cd Python/experiments
+    ```
+  </Step>
+
+  <Step title="Run the simple ROI detection example">
+    ```bash
+    python simple_run_ROI.py
+    ```
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    This script benchmarks face detection performance and measures FPS.
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+### Understanding the Output
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+The script will display real-time metrics:
 
-### Step 3: Go live
+```
+Video: /path/to/video.mp4
+Frames totales: 10800, FPS original: 30.0
+--------------------------------------------------
+Frame 200: Tiempo detección: 25.3ms, FPS: 39.5
+Frame 400: Tiempo detección: 24.8ms, FPS: 40.3
+...
+```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+## Running EVM Processing
 
-## Next steps
+Now let's extract vital signs using Eulerian Video Magnification:
 
-Now that you have your docs running, explore these key features:
+<CodeGroup>
 
-<CardGroup cols={2}>
+```python Python Script
+import cv2
+import sys
+import os
+from collections import deque
+import numpy as np
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+# Add project root to path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+from src.face_detector.manager import FaceDetector
+from src.evm.evm_manager import process_video_evm_vital_signs
+from src.config import TARGET_ROI_SIZE
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+def measure_vital_signs(video_path, buffer_size=200):
+    """Extract heart rate and respiratory rate from video."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Error: Could not open {video_path}")
+        return
+    
+    # Initialize face detector
+    face_detector = FaceDetector(model_type='mediapipe')
+    frame_buffer = []
+    hr_history = deque(maxlen=10)
+    
+    print("Processing video...")
+    
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Detect face and extract ROI
+            roi = face_detector.detect_face(frame)
+            
+            if roi:
+                x, y, w, h = roi
+                roi_frame = frame[y:y+h, x:x+w]
+                roi_frame = cv2.resize(roi_frame, TARGET_ROI_SIZE)
+                frame_buffer.append(roi_frame)
+                
+                # Process when buffer is full
+                if len(frame_buffer) >= buffer_size:
+                    result = process_video_evm_vital_signs(frame_buffer)
+                    
+                    hr = result['heart_rate']
+                    rr = result['respiratory_rate']
+                    
+                    if hr is not None:
+                        hr_history.append(hr)
+                        filtered_hr = np.median(list(hr_history))
+                        print(f"Heart Rate: {filtered_hr:.1f} BPM")
+                    
+                    if rr is not None:
+                        print(f"Respiratory Rate: {rr:.1f} BPM")
+                    
+                    frame_buffer.clear()
+    
+    finally:
+        cap.release()
+        face_detector.close()
+        print("Processing complete!")
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+if __name__ == "__main__":
+    # Replace with your video file path
+    measure_vital_signs("path/to/your/video.mp4")
+```
 
-</CardGroup>
+```python Using Existing Script
+python simple_run_EVM.py
+```
+
+</CodeGroup>
+
+### Expected Output
+
+When running the EVM processing script, you'll see output like:
+
+```
+======================================================================
+PROCESAMIENTO CON EULERIAN VIDEO MAGNIFICATION (EVM)
+======================================================================
+Video: dataset_2/subject1/vid.mp4
+Frames totales: 10800, FPS original: 30.0
+Tamaño de buffer: 200 frames
+======================================================================
+
+Chunk 1 (frames 1-200):
+  Tiempo chunk: 1.85s | Tiempo/frame: 9.3ms | FPS: 108.1
+  HR estimada: 78.2 BPM | GT: 80.1 BPM | Error: -1.9 BPM
+
+Chunk 2 (frames 201-400):
+  Tiempo chunk: 1.92s | Tiempo/frame: 9.6ms | FPS: 104.2
+  HR estimada: 79.5 BPM | GT: 79.8 BPM | Error: -0.3 BPM
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Each "chunk" represents 200 frames (approximately 6.7 seconds at 30 FPS). The system needs this duration to accurately estimate vital signs via frequency analysis.
 </Note>
+
+## Understanding the Results
+
+The output includes several key metrics:
+
+<AccordionGroup>
+  <Accordion title="Processing Time">
+    - **Tiempo chunk**: Total processing time for 200 frames
+    - **Tiempo/frame**: Average time per frame (lower is better)
+    - **FPS**: Effective processing frame rate
+  </Accordion>
+  
+  <Accordion title="Vital Signs">
+    - **HR estimada**: Estimated heart rate in beats per minute
+    - **RR estimada**: Estimated respiratory rate in breaths per minute
+    - Filtered using median of last 10 measurements for stability
+  </Accordion>
+  
+  <Accordion title="Accuracy Metrics (when ground truth available)">
+    - **GT**: Ground truth value from reference device
+    - **Error**: Difference between estimate and ground truth (positive = overestimate)
+  </Accordion>
+</AccordionGroup>
+
+## Run Complete Benchmark
+
+For comprehensive performance analysis including detection, EVM processing, and accuracy:
+
+```bash
+python simple_run_EVM_ROI.py
+```
+
+This runs an end-to-end benchmark that measures:
+
+1. **Face detection performance** (ROI extraction)
+2. **EVM processing time** (vital signs extraction)
+3. **End-to-end pipeline** (combined metrics)
+4. **Accuracy statistics** (compared to ground truth)
+
+### Benchmark Output
+
+```
+================================================================================
+1. MÉTRICAS DE DETECCIÓN FACIAL (ROI)
+--------------------------------------------------------------------------------
+Frames procesados: 10800
+Tiempo promedio por frame: 25.1 ms
+FPS de detección: 39.8
+
+2. MÉTRICAS DE PROCESAMIENTO EVM
+--------------------------------------------------------------------------------
+Chunks procesados: 54
+Tiempo promedio por frame: 9.5 ms
+FPS de procesamiento EVM: 105.3
+
+3. MÉTRICAS END-TO-END (DETECCIÓN + EVM)
+--------------------------------------------------------------------------------
+FPS end-to-end: 28.7
+Tiempo por medición: 6.97s (200 frames)
+
+Desglose de tiempo promedio:
+  Detección ROI: 73.2%
+  Procesamiento EVM: 26.8%
+
+4. MÉTRICAS DE PRECISIÓN (HEART RATE)
+--------------------------------------------------------------------------------
+Número de mediciones: 54
+
+Métricas de Error:
+  Mean Absolute Error (MAE): 3.42 BPM
+  Root Mean Square Error (RMSE): 4.18 BPM
+  
+Distribución de Errores:
+  Dentro de ±5 BPM: 87.0%
+  Dentro de ±10 BPM: 96.3%
+
+Correlación con Ground Truth: 0.924
+```
+
+<Check>
+**Good performance indicators:**
+- MAE < 5 BPM for heart rate
+- >85% of predictions within ±5 BPM
+- Correlation > 0.9 with ground truth
+- Detection FPS > 30 for real-time capability
+</Check>
+
+## Choosing a Different Face Detector
+
+You can easily switch between detection models by changing the `model_type` parameter:
+
+<CodeGroup>
+
+```python MediaPipe (Recommended)
+face_detector = FaceDetector(model_type='mediapipe')
+# Fast and accurate - best for Raspberry Pi
+# ~30-40 FPS on RPi 4
+```
+
+```python YOLOv8
+face_detector = FaceDetector(model_type='yolov8n')
+# Higher accuracy, more computational cost
+# ~15-20 FPS on RPi 4
+```
+
+```python Haar Cascade
+face_detector = FaceDetector(model_type='haar')
+# Lightweight but less accurate
+# ~50+ FPS on RPi 4
+```
+
+```python MTCNN
+face_detector = FaceDetector(model_type='mtcnn')
+# Robust to pose variations
+# ~8-12 FPS on RPi 4
+```
+
+</CodeGroup>
+
+<Info>
+See [Choosing a Detector](/guides/choosing-detector) for detailed comparison and recommendations.
+</Info>
+
+## Using Your Own Video
+
+To process your own video file:
+
+1. **Prepare your video**:
+   - 30 FPS recommended (adjustable in `src/config.py`)
+   - Clear view of face
+   - Stable lighting
+   - Minimal head movement
+
+2. **Update the video path** in the script:
+   ```python
+   VIDEO_PATH = "/path/to/your/video.mp4"
+   ```
+
+3. **For webcam input**, use:
+   ```python
+   cap = cv2.VideoCapture(0)  # 0 for default webcam
+   ```
+
+<Warning>
+**For accurate measurements:**
+- Ensure stable lighting (avoid flickering or rapid changes)
+- Keep subject relatively still
+- Minimum 200 frames needed per measurement (~6.7 seconds at 30 FPS)
+- Indoor environments work best
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Detailed setup for Docker, virtual environments, and Raspberry Pi
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize amplification factors, filters, and processing parameters
+  </Card>
+  <Card title="Understanding EVM" icon="microscope" href="/concepts/eulerian-video-magnification">
+    Learn how the algorithm extracts vital signs
+  </Card>
+  <Card title="Performance Optimization" icon="bolt" href="/guides/performance-optimization">
+    Tips for improving speed and accuracy
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No face detected">
+    - Ensure adequate lighting
+    - Check that face is clearly visible in frame
+    - Try a different detection model
+    - Verify camera/video source is working
+  </Accordion>
+  
+  <Accordion title="Inaccurate measurements">
+    - Check for stable lighting conditions
+    - Ensure subject remains still
+    - Verify proper camera focus
+    - Try adjusting amplification factors in `src/config.py`
+    - Increase buffer size for more stable estimates
+  </Accordion>
+  
+  <Accordion title="Slow processing">
+    - Switch to MediaPipe or Haar detector
+    - Reduce pyramid levels in config (for RPi)
+    - Lower TARGET_ROI_SIZE in `src/config.py`
+    - Consider using Docker image with optimized dependencies
+  </Accordion>
+  
+  <Accordion title="ImportError or ModuleNotFoundError">
+    - Verify all dependencies installed: `pip install -r requirements.txt`
+    - Check Python version (3.8+ required)
+    - Ensure you're in the correct directory
+    - Try creating a fresh virtual environment
+  </Accordion>
+</AccordionGroup>

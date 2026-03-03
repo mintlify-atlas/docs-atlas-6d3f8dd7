@@ -1,0 +1,189 @@
+---
+title: "Configuration"
+description: "System configuration constants and parameters"
+---
+
+The `config.py` module contains all configurable parameters for the EVM Vital Signs Monitor system. These constants control signal processing, ROI detection, and video processing behavior.
+
+## Import
+
+```python
+from src.config import (
+    ALPHA_HR, LOW_HEART, HIGH_HEART,
+    ALPHA_RR, LOW_RESP, HIGH_RESP,
+    TARGET_ROI_SIZE, FPS, YOLO_MODELS
+)
+```
+
+## Heart Rate Parameters
+
+Parameters controlling heart rate signal processing and validation.
+
+<ParamField path="ALPHA_HR" type="int" default="30">
+  Amplification factor for heart rate magnification in Eulerian Video Magnification.
+</ParamField>
+
+<ParamField path="LOW_HEART" type="float" default="0.83">
+  Lower frequency bound for heart rate bandpass filter (Hz).
+  Corresponds to ~50 BPM (0.83 Hz × 60 = 49.8 BPM).
+</ParamField>
+
+<ParamField path="HIGH_HEART" type="float" default="3.0">
+  Upper frequency bound for heart rate bandpass filter (Hz).
+  Corresponds to 180 BPM (3.0 Hz × 60 = 180 BPM).
+</ParamField>
+
+<ParamField path="MAX_HEART_BPM" type="int" default="250">
+  Maximum physically plausible heart rate (beats per minute).
+  Measurements exceeding this are considered invalid.
+</ParamField>
+
+<ParamField path="MIN_HEART_BPM" type="int" default="40">
+  Minimum physically plausible heart rate (beats per minute).
+  Measurements below this are considered invalid.
+</ParamField>
+
+## Respiratory Rate Parameters
+
+Parameters controlling respiratory rate signal processing and validation.
+
+<ParamField path="ALPHA_RR" type="int" default="50">
+  Amplification factor for respiratory rate magnification.
+  Higher than heart rate due to smaller motion amplitude.
+</ParamField>
+
+<ParamField path="LOW_RESP" type="float" default="0.18">
+  Lower frequency bound for respiratory rate bandpass filter (Hz).
+  Corresponds to ~11 BPM (0.18 Hz × 60 = 10.8 BPM).
+</ParamField>
+
+<ParamField path="HIGH_RESP" type="float" default="0.5">
+  Upper frequency bound for respiratory rate bandpass filter (Hz).
+  Corresponds to 30 BPM (0.5 Hz × 60 = 30 BPM).
+</ParamField>
+
+<ParamField path="MAX_RESP_BPM" type="int" default="35">
+  Maximum physically plausible respiratory rate (breaths per minute).
+  Measurements exceeding this are considered invalid.
+</ParamField>
+
+<ParamField path="MIN_RESP_BPM" type="int" default="8">
+  Minimum physically plausible respiratory rate (breaths per minute).
+  Measurements below this are considered invalid.
+</ParamField>
+
+## ROI Parameters
+
+Parameters controlling Region of Interest (ROI) extraction and processing.
+
+<ParamField path="LEVELS_RPI" type="int" default="3">
+  Number of levels for ROI pyramid processing in Laplacian pyramid decomposition.
+</ParamField>
+
+<ParamField path="ROI_PADDING" type="int" default="10">
+  Padding (in pixels) added around the detected face bounding box for ROI extraction.
+  Ensures the entire facial region is captured.
+</ParamField>
+
+<ParamField path="TARGET_ROI_SIZE" type="tuple" default="(320, 240)">
+  Target size for ROI processing (width, height) in pixels.
+  All extracted face ROIs are resized to this dimension for consistent processing.
+  
+  <Note>
+    An alternative size `(640, 480)` is available in the source but commented out.
+    The smaller size reduces computational load.
+  </Note>
+</ParamField>
+
+## Video Parameters
+
+Parameters controlling video capture and frame processing.
+
+<ParamField path="FPS" type="int" default="30">
+  Assumed video frame rate (frames per second).
+  Used for temporal frequency calculations in signal processing.
+</ParamField>
+
+## YOLO Model Paths
+
+Paths to pre-trained YOLO face detection models.
+
+<ParamField path="YOLO_MODELS" type="dict">
+  Dictionary mapping YOLO model names to their file paths.
+  
+  ```python
+  YOLO_MODELS = {
+      "yolov8n": "src/weights_models/yolov8n-face.pt",   # YOLOv8 nano
+      "yolov12n": "src/weights_models/yolov12n-face.pt"  # YOLOv12 nano
+  }
+  ```
+  
+  Access specific models:
+  ```python
+  from src.config import YOLO_MODELS
+  
+  yolov8_path = YOLO_MODELS["yolov8n"]
+  yolov12_path = YOLO_MODELS["yolov12n"]
+  ```
+</ParamField>
+
+## ROI Stabilization Parameters
+
+Parameters for stabilizing ROI position across frames to reduce jitter.
+
+<ParamField path="ROI_CHANGE_THRESHOLD" type="int" default="20">
+  Threshold for significant ROI position change (pixels).
+  Changes smaller than this threshold may be smoothed to reduce jitter.
+</ParamField>
+
+<ParamField path="ROI_WEIGHTS" type="list" default="[0.1, 0.15, 0.2, 0.25, 0.3]">
+  Weights for ROI smoothing filter applied to recent ROI positions.
+  Most recent position has highest weight (0.3), oldest has lowest (0.1).
+  
+  ```python
+  # Weights sum to 1.0 for weighted average
+  # Applied to last 5 ROI positions: [oldest ... newest]
+  ROI_WEIGHTS = [0.1, 0.15, 0.2, 0.25, 0.3]
+  ```
+</ParamField>
+
+## Configuration Example
+
+```python
+from src.config import (
+    ALPHA_HR, LOW_HEART, HIGH_HEART,
+    TARGET_ROI_SIZE, FPS, ROI_PADDING
+)
+
+# Use configuration in processing
+print(f"Heart rate filter band: {LOW_HEART}Hz - {HIGH_HEART}Hz")
+print(f"ROI target size: {TARGET_ROI_SIZE}")
+print(f"Video FPS: {FPS}")
+print(f"EVM amplification factor: {ALPHA_HR}")
+
+# Output:
+# Heart rate filter band: 0.83Hz - 3.0Hz
+# ROI target size: (320, 240)
+# Video FPS: 30
+# EVM amplification factor: 30
+```
+
+## Parameter Relationships
+
+<Warning>
+  Modifying these parameters can significantly affect measurement accuracy:
+  
+  - **Bandpass filter bounds** (`LOW_HEART`, `HIGH_HEART`, `LOW_RESP`, `HIGH_RESP`) must match expected physiological ranges
+  - **Amplification factors** (`ALPHA_HR`, `ALPHA_RR`) affect signal visibility but can introduce noise if too high
+  - **ROI size** (`TARGET_ROI_SIZE`) impacts processing speed and memory usage
+  - **FPS** must match the actual video frame rate for accurate frequency analysis
+</Warning>
+
+## Validation Ranges
+
+| Parameter | Min | Max | Unit | Physiological Basis |
+|-----------|-----|-----|------|---------------------|
+| Heart Rate | 40 | 250 | BPM | Resting to maximum exercise |
+| Respiratory Rate | 8 | 35 | BPM | Normal breathing to hyperventilation |
+| HR Filter | 0.83 | 3.0 | Hz | 50-180 BPM range |
+| RR Filter | 0.18 | 0.5 | Hz | 11-30 BPM range |

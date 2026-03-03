@@ -1,0 +1,353 @@
+---
+title: HaarCascadeDetector
+description: Fast face detector using OpenCV's Haar Cascade classifier for real-time applications
+---
+
+## Overview
+
+The `HaarCascadeDetector` class uses OpenCV's pre-trained Haar Cascade classifier for face detection. It's the fastest detector available, making it ideal for real-time applications on low-power devices.
+
+## Initialization
+
+```python
+from src.face_detector.haar_detector import HaarCascadeDetector
+
+# Default parameters
+detector = HaarCascadeDetector()
+
+# Custom parameters
+detector = HaarCascadeDetector(
+    scale_factor=1.1,
+    min_neighbors=5,
+    min_size=(50, 50)
+)
+```
+
+<ParamField path="scale_factor" type="float" default="1.1">
+  Scale factor for multi-scale detection.
+  
+  Specifies how much the image size is reduced at each image scale.
+  - Valid range: 1.01 to 1.5
+  - Smaller values (closer to 1.0): More thorough search, slower, more detections
+  - Larger values (closer to 1.5): Faster search, fewer detections
+  - Recommended: 1.1 for balanced performance
+</ParamField>
+
+<ParamField path="min_neighbors" type="int" default="4">
+  Minimum neighbors for detection reliability.
+  
+  Specifies how many neighbors each candidate rectangle should have to retain it.
+  - Higher values: Fewer false positives, may miss some faces
+  - Lower values: More detections, more false positives
+  - Recommended: 4-6 for most applications
+</ParamField>
+
+<ParamField path="min_size" type="tuple" default="(30, 30)">
+  Minimum face size to detect as (width, height) in pixels.
+  
+  Faces smaller than this will be ignored.
+  - Smaller values: Detect smaller/distant faces, slower
+  - Larger values: Faster, only detect larger/closer faces
+  - Recommended: (30, 30) for general use, (50, 50) for close-range
+</ParamField>
+
+## Attributes
+
+<ResponseField name="cascade" type="cv2.CascadeClassifier">
+  Loaded Haar cascade classifier using OpenCV's pre-trained frontal face model:
+  `haarcascade_frontalface_default.xml`
+</ResponseField>
+
+<ResponseField name="scale_factor" type="float">
+  Scale factor between successive image scales (1.01-1.5).
+</ResponseField>
+
+<ResponseField name="min_neighbors" type="int">
+  Minimum neighbors parameter for detection filtering.
+</ResponseField>
+
+<ResponseField name="min_size" type="tuple">
+  Minimum face size as (width, height) in pixels.
+</ResponseField>
+
+## Methods
+
+### detect()
+
+Detect a single face in the input frame.
+
+```python
+roi = detector.detect(frame)
+if roi:
+    x, y, w, h = roi
+    face = frame[y:y+h, x:x+w]
+```
+
+<ParamField path="frame" type="numpy.ndarray" required>
+  Input image in BGR format (OpenCV default).
+  
+  Will be automatically converted to grayscale internally.
+</ParamField>
+
+<ResponseField name="return" type="tuple | None">
+  Coordinates of the first detected face as `(x, y, w, h)`, or None if no faces detected.
+  
+  - `x`: X-coordinate of top-left corner
+  - `y`: Y-coordinate of top-left corner
+  - `w`: Width of bounding box
+  - `h`: Height of bounding box
+  
+  Note: Only returns the first detected face even if multiple are found.
+</ResponseField>
+
+### close()
+
+Release detector resources.
+
+```python
+detector.close()
+```
+
+Note: Haar Cascade classifier doesn't require explicit cleanup in OpenCV, but this method is included for interface compatibility.
+
+## Usage Examples
+
+### Basic Detection
+
+```python
+import cv2
+from src.face_detector.haar_detector import HaarCascadeDetector
+
+# Initialize detector
+detector = HaarCascadeDetector()
+
+# Read image
+frame = cv2.imread('photo.jpg')
+
+# Detect face
+roi = detector.detect(frame)
+
+if roi:
+    x, y, w, h = roi
+    print(f"Face found at ({x}, {y}) with size {w}x{h}")
+    
+    # Draw bounding box
+    cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+    cv2.imshow('Haar Detection', frame)
+    cv2.waitKey(0)
+else:
+    print("No face detected")
+
+detector.close()
+cv2.destroyAllWindows()
+```
+
+### Real-Time Webcam Detection
+
+```python
+import cv2
+from src.face_detector.haar_detector import HaarCascadeDetector
+
+detector = HaarCascadeDetector(
+    scale_factor=1.1,
+    min_neighbors=5,
+    min_size=(40, 40)
+)
+
+cap = cv2.VideoCapture(0)
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        roi = detector.detect(frame)
+        
+        if roi:
+            x, y, w, h = roi
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.putText(frame, 'Face Detected', (x, y-10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        cv2.imshow('Haar Cascade Detection', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    cap.release()
+    detector.close()
+    cv2.destroyAllWindows()
+```
+
+### Tuning for Different Scenarios
+
+#### High Accuracy (Low False Positives)
+```python
+detector = HaarCascadeDetector(
+    scale_factor=1.05,      # More thorough search
+    min_neighbors=6,        # Higher threshold
+    min_size=(50, 50)       # Larger minimum size
+)
+```
+
+#### High Speed (Maximum FPS)
+```python
+detector = HaarCascadeDetector(
+    scale_factor=1.3,       # Faster search
+    min_neighbors=3,        # Lower threshold
+    min_size=(60, 60)       # Skip small faces
+)
+```
+
+#### Distant Face Detection
+```python
+detector = HaarCascadeDetector(
+    scale_factor=1.1,
+    min_neighbors=4,
+    min_size=(20, 20)       # Detect smaller faces
+)
+```
+
+### With FaceDetector Manager
+
+Recommended usage through the unified manager:
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Default Haar parameters
+detector = FaceDetector(model_type='haar')
+
+# Custom Haar parameters
+detector = FaceDetector(
+    model_type='haar',
+    scale_factor=1.1,
+    min_neighbors=5,
+    min_size=(50, 50)
+)
+
+roi = detector.detect_face(frame)  # Includes stabilization
+detector.close()
+```
+
+## Performance Characteristics
+
+### Speed
+- **Average FPS**: 30+ FPS (fastest detector)
+- **Detection Time**: ~30ms per frame on typical hardware
+- **Real-time capable**: Yes, excellent for live video
+
+### Accuracy
+- **Best for**: Frontal faces with good lighting
+- **Limitations**: Struggles with side profiles, poor lighting, occlusions
+- **False Positives**: Can be higher than deep learning methods
+- **Tuning**: Requires parameter adjustment for optimal results
+
+### Resource Usage
+- **CPU Usage**: Very low
+- **Memory**: Minimal (~1MB for cascade file)
+- **GPU**: Not required
+- **Best For**: Embedded systems, Raspberry Pi, mobile devices
+
+## Implementation Details
+
+### Grayscale Conversion
+
+Haar Cascade requires grayscale input, so conversion happens automatically:
+
+```python
+gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+faces = self.cascade.detectMultiScale(
+    gray, self.scale_factor, self.min_neighbors, minSize=self.min_size
+)
+```
+
+### Single Face Return
+
+Only the first detected face is returned:
+
+```python
+return tuple(faces[0]) if len(faces) else None
+```
+
+### Cascade File Location
+
+Uses OpenCV's built-in cascade file:
+
+```python
+cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+```
+
+## Parameter Tuning Guide
+
+### scale_factor
+
+| Value | Search Thoroughness | Speed | Use Case |
+|-------|---------------------|-------|----------|
+| 1.05 | Very thorough | Slow | Maximum detection rate |
+| 1.1 | Balanced | Medium | General purpose (recommended) |
+| 1.2 | Less thorough | Fast | Real-time priority |
+| 1.3+ | Minimal | Very fast | Speed-critical applications |
+
+### min_neighbors
+
+| Value | False Positives | Missed Faces | Use Case |
+|-------|----------------|--------------|----------|
+| 2-3 | Higher | Fewer | Maximize detections |
+| 4-5 | Balanced | Balanced | General purpose (recommended) |
+| 6-7 | Lower | More | High confidence needed |
+| 8+ | Very low | Many | Critical applications |
+
+### min_size
+
+| Value | Use Case |
+|-------|----------|
+| (20, 20) | Detect distant/small faces |
+| (30, 30) | General purpose (default) |
+| (50, 50) | Close-range only, faster |
+| (80, 80) | Very close faces, maximum speed |
+
+## Common Issues and Solutions
+
+### Too Many False Positives
+```python
+detector = HaarCascadeDetector(
+    min_neighbors=6,  # Increase from default 4
+    min_size=(50, 50)  # Increase from default (30, 30)
+)
+```
+
+### Missing Faces
+```python
+detector = HaarCascadeDetector(
+    scale_factor=1.05,  # Decrease from default 1.1
+    min_neighbors=3,    # Decrease from default 4
+    min_size=(20, 20)   # Decrease from default (30, 30)
+)
+```
+
+### Too Slow
+```python
+detector = HaarCascadeDetector(
+    scale_factor=1.3,   # Increase from default 1.1
+    min_size=(60, 60)   # Increase from default (30, 30)
+)
+```
+
+## Comparison with Other Detectors
+
+| Feature | Haar | MediaPipe | YOLO | MTCNN |
+|---------|------|-----------|------|-------|
+| Speed | Fastest (30+ FPS) | Fast (25 FPS) | Moderate (15 FPS) | Slow (10 FPS) |
+| Accuracy | Good | Very Good | Excellent | Excellent |
+| Setup | Easiest | Easy | Moderate | Moderate |
+| Dependencies | OpenCV only | MediaPipe + OpenCV | Ultralytics + OpenCV | mtcnn + OpenCV |
+| Best For | Embedded/Real-time | Balanced apps | High accuracy | Maximum accuracy |
+
+<Tip>
+  Haar Cascade is the best choice for Raspberry Pi and embedded systems where speed and low resource usage are critical.
+</Tip>
+
+<Note>
+  Haar Cascade only detects frontal faces well. For profile faces or challenging angles, consider MediaPipe or YOLO.
+</Note>

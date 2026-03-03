@@ -1,0 +1,461 @@
+---
+title: Configuration Guide
+description: Complete guide to configuring EVM Vital Signs Monitor parameters for optimal performance
+---
+
+## Overview
+
+The EVM Vital Signs Monitor uses a centralized configuration system in `src/config.py`. This guide explains all configuration parameters and when to adjust them for your specific deployment scenario.
+
+## Configuration Categories
+
+Parameters are organized into five main categories:
+- Heart Rate (HR) detection
+- Respiratory Rate (RR) detection
+- Region of Interest (ROI) processing
+- Video capture settings
+- Face detection models
+
+---
+
+## Heart Rate Parameters
+
+These parameters control heart rate detection and amplification.
+
+### ALPHA_HR
+
+<ParamField path="ALPHA_HR" type="integer" default="30">
+  Amplification factor for heart rate signal magnification. Higher values increase signal visibility but may introduce noise.
+</ParamField>
+
+**When to adjust:**
+- Increase (40-50) for subjects with weak pulse signals or darker skin tones
+- Decrease (15-25) if you see excessive noise or artifacts
+- Optimal range: 20-40
+
+```python
+# Example: Increase amplification for low-light conditions
+ALPHA_HR = 40
+```
+
+### Frequency Bounds
+
+<ParamField path="LOW_HEART" type="float" default="0.83">
+  Lower frequency bound for heart rate bandpass filter (Hz). Corresponds to 50 BPM.
+</ParamField>
+
+<ParamField path="HIGH_HEART" type="float" default="3.0">
+  Upper frequency bound for heart rate bandpass filter (Hz). Corresponds to 180 BPM.
+</ParamField>
+
+**Frequency to BPM conversion:** `BPM = Hz × 60`
+
+```python
+# Default range: 50-180 BPM
+LOW_HEART = 0.83   # 50 BPM
+HIGH_HEART = 3.0   # 180 BPM
+
+# For elderly subjects (40-140 BPM):
+LOW_HEART = 0.67   # 40 BPM
+HIGH_HEART = 2.33  # 140 BPM
+
+# For athletes (30-200 BPM):
+LOW_HEART = 0.5    # 30 BPM
+HIGH_HEART = 3.33  # 200 BPM
+```
+
+### Validity Constraints
+
+<ParamField path="MAX_HEART_BPM" type="integer" default="250">
+  Maximum physically plausible heart rate. Readings above this are rejected.
+</ParamField>
+
+<ParamField path="MIN_HEART_BPM" type="integer" default="40">
+  Minimum physically plausible heart rate. Readings below this are rejected.
+</ParamField>
+
+<Tip>
+  These validity constraints act as sanity checks. Set them based on your target population:
+  - General adults: 40-200 BPM
+  - Infants/children: 60-220 BPM
+  - Athletes: 30-180 BPM
+</Tip>
+
+---
+
+## Respiratory Rate Parameters
+
+<Warning>
+  Respiratory rate detection is less reliable than heart rate and requires the subject to remain very still.
+</Warning>
+
+### ALPHA_RR
+
+<ParamField path="ALPHA_RR" type="integer" default="50">
+  Amplification factor for respiratory rate signal magnification.
+</ParamField>
+
+**Tuning guidelines:**
+- Default (50) works well for most scenarios
+- Increase (60-80) for shallow breathing detection
+- Decrease (30-40) if you see motion artifacts
+
+### Frequency Bounds
+
+<ParamField path="LOW_RESP" type="float" default="0.18">
+  Lower frequency bound for respiratory rate bandpass filter (Hz). Corresponds to 10.8 breaths/min.
+</ParamField>
+
+<ParamField path="HIGH_RESP" type="float" default="0.5">
+  Upper frequency bound for respiratory rate bandpass filter (Hz). Corresponds to 30 breaths/min.
+</ParamField>
+
+```python
+# Default range: 10.8-30 breaths per minute
+LOW_RESP = 0.18    # 10.8 BPM
+HIGH_RESP = 0.5    # 30 BPM
+
+# For relaxed breathing (8-20 BPM):
+LOW_RESP = 0.13    # 8 BPM
+HIGH_RESP = 0.33   # 20 BPM
+```
+
+### Validity Constraints
+
+<ParamField path="MAX_RESP_BPM" type="integer" default="35">
+  Maximum plausible respiratory rate (breaths per minute).
+</ParamField>
+
+<ParamField path="MIN_RESP_BPM" type="integer" default="8">
+  Minimum plausible respiratory rate (breaths per minute).
+</ParamField>
+
+---
+
+## ROI Processing Parameters
+
+These parameters control how facial regions are processed for EVM analysis.
+
+### LEVELS_RPI
+
+<ParamField path="LEVELS_RPI" type="integer" default="3">
+  Number of pyramid levels for Laplacian pyramid decomposition.
+</ParamField>
+
+**Critical for performance optimization:**
+
+<Tabs>
+  <Tab title="Raspberry Pi 4">
+    ```python
+    LEVELS_RPI = 3  # Optimal for RPi4
+    ```
+    - Balances accuracy and computational cost
+    - Achieves ~30-40 FPS on RPi4
+    - Recommended for embedded deployment
+  </Tab>
+  
+  <Tab title="Desktop/Laptop">
+    ```python
+    LEVELS_RPI = 4  # Higher quality
+    ```
+    - Better signal quality
+    - Slower processing (~15-20 FPS)
+    - Use if you have sufficient compute power
+  </Tab>
+  
+  <Tab title="High Performance">
+    ```python
+    LEVELS_RPI = 5  # Maximum quality
+    ```
+    - Best signal fidelity
+    - Slowest processing (~5-10 FPS)
+    - Only for offline analysis
+  </Tab>
+</Tabs>
+
+<Note>
+  Each additional pyramid level approximately doubles the processing time. Level 3 is the sweet spot for real-time performance.
+</Note>
+
+### TARGET_ROI_SIZE
+
+<ParamField path="TARGET_ROI_SIZE" type="tuple" default="(320, 240)">
+  Target dimensions for resized ROI (width, height) in pixels.
+</ParamField>
+
+**Performance impact:**
+
+```python
+# Low resolution - fastest (default for RPi)
+TARGET_ROI_SIZE = (320, 240)
+# Processing time: ~1-2 seconds per 200 frames
+
+# Medium resolution - balanced
+TARGET_ROI_SIZE = (480, 360)
+# Processing time: ~3-4 seconds per 200 frames
+
+# High resolution - best quality
+TARGET_ROI_SIZE = (640, 480)
+# Processing time: ~5-7 seconds per 200 frames
+```
+
+<Tip>
+  Larger ROI sizes improve accuracy but significantly increase processing time. For real-time applications, use 320x240.
+</Tip>
+
+### ROI_PADDING
+
+<ParamField path="ROI_PADDING" type="integer" default="10">
+  Padding (in pixels) added around detected face bounding box.
+</ParamField>
+
+```python
+# Tight crop (may miss forehead)
+ROI_PADDING = 5
+
+# Standard crop (default)
+ROI_PADDING = 10
+
+# Generous crop (includes more background)
+ROI_PADDING = 20
+```
+
+---
+
+## ROI Stabilization Parameters
+
+These parameters reduce jitter in face detection across frames.
+
+### ROI_CHANGE_THRESHOLD
+
+<ParamField path="ROI_CHANGE_THRESHOLD" type="integer" default="20">
+  Threshold for significant ROI position change (pixels). Changes below this are ignored.
+</ParamField>
+
+```python
+# More sensitive to movement
+ROI_CHANGE_THRESHOLD = 10
+
+# Less sensitive (more stable)
+ROI_CHANGE_THRESHOLD = 30
+```
+
+### ROI_WEIGHTS
+
+<ParamField path="ROI_WEIGHTS" type="list" default="[0.1, 0.15, 0.2, 0.25, 0.3]">
+  Weights for temporal ROI smoothing filter. Recent detections get higher weights.
+</ParamField>
+
+```python
+# Default: Recent frames weighted more heavily
+ROI_WEIGHTS = [0.1, 0.15, 0.2, 0.25, 0.3]
+
+# Equal weighting (more smoothing)
+ROI_WEIGHTS = [0.2, 0.2, 0.2, 0.2, 0.2]
+
+# Aggressive recent weighting (less smoothing)
+ROI_WEIGHTS = [0.05, 0.1, 0.15, 0.25, 0.45]
+```
+
+<Note>
+  The weights are automatically normalized, so they don't need to sum to 1.0.
+</Note>
+
+---
+
+## Video Capture Configuration
+
+### FPS
+
+<ParamField path="FPS" type="integer" default="30">
+  Video frame rate (frames per second). Must match your camera's actual frame rate.
+</ParamField>
+
+<Warning>
+  **Critical:** This value MUST match your actual video frame rate. Incorrect FPS will result in wrong HR/RR calculations.
+</Warning>
+
+```python
+# Standard webcam
+FPS = 30
+
+# High-speed camera
+FPS = 60
+
+# Low-bandwidth camera
+FPS = 15
+```
+
+**How FPS affects calculations:**
+
+The system uses FPS to convert frequencies to BPM:
+```python
+# Nyquist frequency = FPS / 2
+# At 30 FPS: Max detectable frequency = 15 Hz = 900 BPM
+# At 15 FPS: Max detectable frequency = 7.5 Hz = 450 BPM
+```
+
+### BUFFER_SIZE
+
+While not in the config file shown, the default buffer size is **200 frames**:
+
+```python
+# At 30 FPS:
+BUFFER_SIZE = 200  # ~6.7 seconds of video
+
+# For faster measurements:
+BUFFER_SIZE = 150  # ~5 seconds
+
+# For more accurate measurements:
+BUFFER_SIZE = 300  # ~10 seconds
+```
+
+<Tip>
+  Longer buffers (250-300 frames) improve frequency resolution but increase latency. 200 frames is optimal for real-time use.
+</Tip>
+
+---
+
+## Face Detection Model Configuration
+
+### YOLO_MODELS
+
+<ParamField path="YOLO_MODELS" type="dict">
+  Paths to YOLO model weights for face detection.
+</ParamField>
+
+```python
+YOLO_MODELS = {
+    "yolov8n": "src/weights_models/yolov8n-face.pt",
+    "yolov12n": "src/weights_models/yolov12n-face.pt"
+}
+```
+
+**Usage example:**
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Use YOLOv8n preset
+detector = FaceDetector(
+    model_type="yolo",
+    preset="yolov8n",
+    confidence=0.5
+)
+
+# Use custom YOLO model
+detector = FaceDetector(
+    model_type="yolo",
+    model_path="/path/to/custom-model.pt",
+    confidence=0.6
+)
+```
+
+See [Choosing a Detector](/guides/choosing-detector) for detailed comparison.
+
+---
+
+## Complete Configuration Example
+
+Here's a complete configuration for Raspberry Pi 4 deployment:
+
+```python
+# src/config.py - Optimized for Raspberry Pi 4
+
+# ==================== HEART RATE (HR) PARAMETERS ====================
+ALPHA_HR = 30        # Standard amplification
+LOW_HEART = 0.83     # 50 BPM
+HIGH_HEART = 3.0     # 180 BPM
+MAX_HEART_BPM = 250
+MIN_HEART_BPM = 40
+
+# ==================== RESPIRATORY RATE (RR) PARAMETERS ====================
+ALPHA_RR = 50        # Higher amplification for subtle motion
+LOW_RESP = 0.18      # 10.8 breaths/min
+HIGH_RESP = 0.5      # 30 breaths/min
+MAX_RESP_BPM = 35
+MIN_RESP_BPM = 8
+
+# ==================== ROI PARAMETERS (OPTIMIZED FOR RPI4) ====================
+LEVELS_RPI = 3       # Optimal balance for RPi4
+ROI_PADDING = 10
+TARGET_ROI_SIZE = (320, 240)  # Low resolution for speed
+
+# ==================== VIDEO CAPTURE ====================
+FPS = 30
+
+# ==================== ROI STABILIZATION ====================
+ROI_CHANGE_THRESHOLD = 20
+ROI_WEIGHTS = [0.1, 0.15, 0.2, 0.25, 0.3]
+
+# ==================== YOLO MODELS ====================
+YOLO_MODELS = {
+    "yolov8n": "src/weights_models/yolov8n-face.pt",
+    "yolov12n": "src/weights_models/yolov12n-face.pt"
+}
+```
+
+---
+
+## Configuration Validation
+
+Before running the system, validate your configuration:
+
+```python
+import src.config as config
+
+# Verify frequency ranges don't overlap
+assert config.HIGH_RESP < config.LOW_HEART, "RR and HR bands must not overlap"
+
+# Verify FPS supports desired heart rate detection
+nyquist_freq = config.FPS / 2
+max_detectable_bpm = nyquist_freq * 60
+assert config.MAX_HEART_BPM < max_detectable_bpm, f"FPS too low for MAX_HEART_BPM"
+
+# Verify pyramid levels are reasonable
+assert 1 <= config.LEVELS_RPI <= 6, "LEVELS_RPI should be between 1 and 6"
+
+print("✓ Configuration validated")
+```
+
+---
+
+## Performance Optimization Tips
+
+<Steps>
+  <Step title="Start with defaults">
+    Use the default configuration for initial testing
+  </Step>
+  
+  <Step title="Profile your system">
+    Measure actual FPS and processing time:
+    ```python
+    import time
+    start = time.time()
+    # ... run EVM processing ...
+    elapsed = time.time() - start
+    print(f"Processing time: {elapsed:.2f}s")
+    ```
+  </Step>
+  
+  <Step title="Optimize bottlenecks">
+    - If detection is slow: reduce `TARGET_ROI_SIZE`
+    - If EVM is slow: reduce `LEVELS_RPI`
+    - If results are noisy: increase buffer size
+  </Step>
+  
+  <Step title="Validate accuracy">
+    Test against ground truth with different configurations to find optimal settings
+  </Step>
+</Steps>
+
+See [Performance Optimization](/guides/performance-optimization) for advanced tuning strategies.
+
+---
+
+## Related Resources
+
+- [Choosing a Face Detector](/guides/choosing-detector)
+- [Raspberry Pi Deployment](/guides/raspberry-pi-deployment)
+- [Performance Optimization](/guides/performance-optimization)
+- [EVM Core API Reference](/api/evm-core)

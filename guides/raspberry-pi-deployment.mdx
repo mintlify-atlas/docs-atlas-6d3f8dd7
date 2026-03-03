@@ -1,0 +1,769 @@
+---
+title: Raspberry Pi Deployment
+description: Complete guide for deploying EVM Vital Signs Monitor on Raspberry Pi 4 with optimal performance
+---
+
+## Overview
+
+The EVM Vital Signs Monitor is optimized for **Raspberry Pi 4** and achieves real-time performance through careful configuration and system-level optimizations. This guide covers everything from initial setup to production deployment.
+
+<Note>
+  Tested on Raspberry Pi 4 Model B (4GB RAM). The 2GB model may work but with reduced performance. RPi 3 is not recommended.
+</Note>
+
+## Performance Expectations
+
+With recommended configuration on Raspberry Pi 4:
+
+- **Face Detection**: ~30-40 FPS (MediaPipe)
+- **EVM Processing**: ~1-2 seconds per 200-frame chunk
+- **End-to-End Measurement**: ~3-4 seconds per reading
+- **Heart Rate Accuracy**: MAE < 5 BPM (optimal conditions)
+- **CPU Usage**: 40-60%
+- **Memory Usage**: ~300-400 MB
+
+---
+
+## Quick Start
+
+<Steps>
+  <Step title="Install Raspberry Pi OS">
+    Use **Raspberry Pi OS (64-bit)** for best performance:
+    ```bash
+    # Recommended: Raspberry Pi OS Lite (64-bit)
+    # Download from: https://www.raspberrypi.com/software/
+    ```
+  </Step>
+  
+  <Step title="Update system">
+    ```bash
+    sudo apt update && sudo apt upgrade -y
+    sudo apt install python3-pip python3-venv git -y
+    ```
+  </Step>
+  
+  <Step title="Clone repository">
+    ```bash
+    git clone <repository-url>
+    cd evm-vital-signs-monitor
+    ```
+  </Step>
+  
+  <Step title="Create virtual environment">
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+    
+    <Warning>
+      Installation may take 15-30 minutes on RPi4 due to NumPy/SciPy compilation.
+    </Warning>
+  </Step>
+  
+  <Step title="Configure for Raspberry Pi">
+    The default configuration in `src/config.py` is already optimized for RPi4:
+    ```python
+    LEVELS_RPI = 3              # Optimal pyramid levels
+    TARGET_ROI_SIZE = (320, 240)  # Low resolution for speed
+    FPS = 30                    # Standard webcam FPS
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Raspberry Pi Optimizations
+
+### LEVELS_RPI Parameter
+
+The **most critical** parameter for RPi performance:
+
+<ParamField path="LEVELS_RPI" type="integer" default="3">
+  Number of Laplacian pyramid levels. Directly impacts processing speed.
+</ParamField>
+
+```python
+# src/config.py
+LEVELS_RPI = 3  # CRITICAL for RPi4 performance
+```
+
+**Performance impact:**
+
+| Levels | RPi4 Processing Time | Quality | Recommendation |
+|--------|---------------------|---------|----------------|
+| 2 | ~0.5-1s | Poor | Too coarse |
+| **3** | **~1-2s** | **Good** | **Optimal** |
+| 4 | ~3-5s | Better | Too slow |
+| 5 | ~8-12s | Best | Impractical |
+
+<Tip>
+  `LEVELS_RPI = 3` provides the best balance between accuracy and real-time performance on Raspberry Pi 4.
+</Tip>
+
+---
+
+### ROI Size Optimization
+
+Reduce ROI resolution for faster processing:
+
+```python
+# src/config.py - RPi4 optimized
+TARGET_ROI_SIZE = (320, 240)  # Default
+
+# For even faster processing (slight quality loss):
+TARGET_ROI_SIZE = (240, 180)
+
+# NOT recommended for RPi4 (too slow):
+TARGET_ROI_SIZE = (640, 480)  # 3-4x slower
+```
+
+**Impact on processing time:**
+- `(240, 180)`: ~0.8-1.5s per 200 frames
+- `(320, 240)`: ~1-2s per 200 frames (recommended)
+- `(480, 360)`: ~3-4s per 200 frames
+- `(640, 480)`: ~5-7s per 200 frames
+
+---
+
+### Face Detector Selection
+
+**MediaPipe is strongly recommended for Raspberry Pi:**
+
+```python
+from src.face_detector.manager import FaceDetector
+
+# Recommended for RPi4
+detector = FaceDetector(model_type="mediapipe")
+```
+
+**Detector performance on RPi4:**
+
+<Tabs>
+  <Tab title="MediaPipe (Recommended)">
+    ```python
+    detector = FaceDetector(model_type="mediapipe")
+    ```
+    - **FPS**: 30-40
+    - **CPU**: 40-50%
+    - **Memory**: ~150 MB
+    - **Accuracy**: High
+    - ✅ Best for real-time
+  </Tab>
+  
+  <Tab title="Haar Cascade (Fastest)">
+    ```python
+    detector = FaceDetector(
+        model_type="haar",
+        scale_factor=1.2,  # Faster than 1.1
+        min_neighbors=4
+    )
+    ```
+    - **FPS**: 45-60
+    - **CPU**: 20-30%
+    - **Memory**: ~50 MB
+    - **Accuracy**: Medium
+    - ✅ Good for battery-powered setups
+  </Tab>
+  
+  <Tab title="YOLOv8n (Quality)">
+    ```python
+    detector = FaceDetector(
+        model_type="yolo",
+        preset="yolov8n",
+        confidence=0.5
+    )
+    ```
+    - **FPS**: 15-25
+    - **CPU**: 70-80%
+    - **Memory**: ~300 MB
+    - **Accuracy**: Very High
+    - ⚠️ Slower but more accurate
+  </Tab>
+  
+  <Tab title="MTCNN (Not Recommended)">
+    ```python
+    # NOT recommended for RPi4 real-time use
+    detector = FaceDetector(model_type="mtcnn")
+    ```
+    - **FPS**: 8-15
+    - **CPU**: 80-90%
+    - **Memory**: ~400 MB
+    - **Accuracy**: Very High
+    - ❌ Too slow for real-time
+  </Tab>
+</Tabs>
+
+See [Choosing a Detector](/guides/choosing-detector) for detailed comparison.
+
+---
+
+## System Configuration
+
+### Increase Swap Space
+
+Recommended for 2GB models or when using YOLO/MTCNN:
+
+```bash
+# Increase swap to 2GB
+sudo dphys-swapfile swapoff
+sudo nano /etc/dphys-swapfile
+# Set: CONF_SWAPSIZE=2048
+sudo dphys-swapfile setup
+sudo dphys-swapfile swapon
+```
+
+### Optimize Memory
+
+Reduce GPU memory allocation (unless using camera directly):
+
+```bash
+sudo nano /boot/config.txt
+# Add or modify:
+gpu_mem=128  # Default is 256
+```
+
+Reboot after changes:
+```bash
+sudo reboot
+```
+
+### Disable Desktop Environment
+
+For headless deployment, disable desktop to save resources:
+
+```bash
+sudo systemctl set-default multi-user.target
+sudo reboot
+```
+
+To re-enable:
+```bash
+sudo systemctl set-default graphical.target
+```
+
+---
+
+## Thermal Management
+
+### Monitor Temperature
+
+Raspberry Pi 4 throttles at 80°C. Monitor temperature:
+
+```bash
+# Check current temperature
+vcgencmd measure_temp
+
+# Monitor continuously
+watch -n 1 vcgencmd measure_temp
+```
+
+**In Python:**
+
+```python
+import subprocess
+
+def get_cpu_temp():
+    """Get Raspberry Pi CPU temperature in Celsius."""
+    try:
+        temp = subprocess.check_output(
+            ['vcgencmd', 'measure_temp']
+        ).decode('utf-8')
+        return float(temp.replace('temp=', '').replace("'C\n", ''))
+    except:
+        return None
+
+# Monitor during processing
+while True:
+    temp = get_cpu_temp()
+    if temp and temp > 75:
+        print(f"⚠️ High temperature: {temp}°C")
+        # Consider throttling or cooling
+```
+
+### Cooling Solutions
+
+<CardGroup cols={2}>
+  <Card title="Passive Cooling">
+    - Aluminum heatsink kit: ~$5
+    - Keeps temps around 65-70°C
+    - Silent operation
+    - Recommended for most deployments
+  </Card>
+  
+  <Card title="Active Cooling">
+    - Small 30mm fan: ~$8
+    - Keeps temps around 50-60°C
+    - Slight noise
+    - Recommended for enclosed cases
+  </Card>
+</CardGroup>
+
+<Warning>
+  Sustained temperatures above 80°C will cause CPU throttling, reducing performance by 30-50%.
+</Warning>
+
+### Throttling Detection
+
+Detect if throttling has occurred:
+
+```bash
+vcgencmd get_throttled
+```
+
+Output `throttled=0x0` means no throttling. Any other value indicates throttling events.
+
+```python
+import subprocess
+
+def check_throttling():
+    """Check if Raspberry Pi is being throttled."""
+    result = subprocess.check_output(
+        ['vcgencmd', 'get_throttled']
+    ).decode('utf-8')
+    
+    throttled_hex = result.split('=')[1].strip()
+    throttled_int = int(throttled_hex, 16)
+    
+    if throttled_int == 0:
+        return "No throttling"
+    
+    issues = []
+    if throttled_int & 0x1:
+        issues.append("Under-voltage detected")
+    if throttled_int & 0x2:
+        issues.append("ARM frequency capped")
+    if throttled_int & 0x4:
+        issues.append("Currently throttled")
+    if throttled_int & 0x8:
+        issues.append("Soft temperature limit active")
+    
+    return ", ".join(issues)
+
+print(check_throttling())
+```
+
+---
+
+## Docker Deployment
+
+### Create Dockerfile
+
+```dockerfile
+# Dockerfile.rpi
+FROM python:3.9-slim-bullseye
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY Python/ ./Python/
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/Python
+
+# Run application
+CMD ["python", "Python/experiments/simple_run_EVM.py"]
+```
+
+### Build for ARM64
+
+```bash
+# Build on Raspberry Pi
+docker build -f Dockerfile.rpi -t evm-monitor:rpi .
+
+# Or cross-compile on x86 machine
+docker buildx build \
+  --platform linux/arm64 \
+  -f Dockerfile.rpi \
+  -t evm-monitor:rpi \
+  .
+```
+
+### Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  evm-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.rpi
+    image: evm-monitor:rpi
+    container_name: evm-vital-signs
+    
+    # Access camera device
+    devices:
+      - /dev/video0:/dev/video0
+    
+    # GPU acceleration (if available)
+    # devices:
+    #   - /dev/vchiq:/dev/vchiq
+    
+    volumes:
+      - ./Python:/app/Python
+      - ./data:/app/data
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DISPLAY=${DISPLAY}
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'  # Leave 1 core for system
+          memory: 2G
+```
+
+### Run with Docker
+
+```bash
+# Start container
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop container
+docker-compose down
+```
+
+---
+
+## Production Deployment
+
+### Systemd Service
+
+Create a systemd service for automatic startup:
+
+```bash
+sudo nano /etc/systemd/system/evm-monitor.service
+```
+
+```ini
+[Unit]
+Description=EVM Vital Signs Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/evm-vital-signs-monitor
+Environment="PYTHONPATH=/home/pi/evm-vital-signs-monitor/Python"
+ExecStart=/home/pi/evm-vital-signs-monitor/venv/bin/python \
+          Python/experiments/simple_run_EVM.py
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=append:/var/log/evm-monitor.log
+StandardError=append:/var/log/evm-monitor.error.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+# Reload systemd
+sudo systemctl daemon-reload
+
+# Enable auto-start on boot
+sudo systemctl enable evm-monitor.service
+
+# Start service
+sudo systemctl start evm-monitor.service
+
+# Check status
+sudo systemctl status evm-monitor.service
+
+# View logs
+sudo journalctl -u evm-monitor.service -f
+```
+
+---
+
+## Camera Configuration
+
+### USB Webcam
+
+List available cameras:
+```bash
+ls -l /dev/video*
+```
+
+Test camera:
+```bash
+sudo apt install v4l-utils
+v4l2-ctl --list-devices
+v4l2-ctl -d /dev/video0 --list-formats-ext
+```
+
+**In Python:**
+```python
+import cv2
+
+# Open camera
+cap = cv2.VideoCapture(0)  # /dev/video0
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap.set(cv2.CAP_PROP_FPS, 30)
+
+if not cap.isOpened():
+    raise RuntimeError("Failed to open camera")
+
+ret, frame = cap.read()
+print(f"Frame shape: {frame.shape}")
+cap.release()
+```
+
+### Raspberry Pi Camera Module
+
+Enable camera in raspi-config:
+```bash
+sudo raspi-config
+# Interface Options -> Camera -> Enable
+```
+
+Use with OpenCV:
+```python
+import cv2
+
+# Use GStreamer pipeline for RPi Camera
+pipeline = (
+    "libcamerasrc ! "
+    "video/x-raw,width=640,height=480,framerate=30/1 ! "
+    "videoconvert ! "
+    "appsink"
+)
+
+cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+```
+
+---
+
+## Resource Monitoring
+
+### Real-time Monitoring Script
+
+```python
+import psutil
+import subprocess
+import time
+
+def monitor_resources():
+    """Monitor Raspberry Pi resources during EVM processing."""
+    
+    # CPU usage
+    cpu_percent = psutil.cpu_percent(interval=1)
+    
+    # Memory usage
+    mem = psutil.virtual_memory()
+    mem_mb = mem.used / 1024 / 1024
+    mem_percent = mem.percent
+    
+    # Temperature
+    try:
+        temp_str = subprocess.check_output(
+            ['vcgencmd', 'measure_temp']
+        ).decode('utf-8')
+        temp = float(temp_str.replace('temp=', '').replace("'C\n", ''))
+    except:
+        temp = None
+    
+    # Throttling
+    try:
+        throttled = subprocess.check_output(
+            ['vcgencmd', 'get_throttled']
+        ).decode('utf-8')
+        is_throttled = '0x0' not in throttled
+    except:
+        is_throttled = None
+    
+    print(f"\n=== System Resources ===")
+    print(f"CPU Usage: {cpu_percent:.1f}%")
+    print(f"Memory: {mem_mb:.0f} MB ({mem_percent:.1f}%)")
+    if temp:
+        print(f"Temperature: {temp:.1f}°C")
+    if is_throttled is not None:
+        print(f"Throttled: {'YES ⚠️' if is_throttled else 'No'}")
+
+if __name__ == "__main__":
+    while True:
+        monitor_resources()
+        time.sleep(5)
+```
+
+---
+
+## Performance Benchmarking
+
+Benchmark your Raspberry Pi:
+
+```python
+import time
+import cv2
+import numpy as np
+from src.face_detector.manager import FaceDetector
+from src.evm.evm_manager import process_video_evm_vital_signs
+
+def benchmark_rpi():
+    """Benchmark EVM performance on Raspberry Pi."""
+    
+    print("Starting Raspberry Pi benchmark...\n")
+    
+    # Test 1: Face detection
+    detector = FaceDetector(model_type="mediapipe")
+    cap = cv2.VideoCapture(0)
+    
+    detection_times = []
+    for i in range(100):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        start = time.time()
+        roi = detector.detect_face(frame)
+        elapsed = time.time() - start
+        detection_times.append(elapsed)
+    
+    avg_detection = np.mean(detection_times)
+    detection_fps = 1 / avg_detection
+    
+    print(f"Face Detection:")
+    print(f"  Average FPS: {detection_fps:.1f}")
+    print(f"  Average time: {avg_detection*1000:.1f} ms\n")
+    
+    # Test 2: EVM processing
+    video_frames = []
+    for _ in range(200):
+        ret, frame = cap.read()
+        if ret and roi:
+            x, y, w, h = roi
+            face_roi = frame[y:y+h, x:x+w]
+            video_frames.append(face_roi)
+    
+    cap.release()
+    detector.close()
+    
+    if len(video_frames) >= 200:
+        start = time.time()
+        results = process_video_evm_vital_signs(video_frames, verbose=True)
+        evm_time = time.time() - start
+        
+        print(f"\nEVM Processing:")
+        print(f"  Processing time: {evm_time:.2f} seconds")
+        print(f"  Heart rate: {results.get('heart_rate', 'N/A')} BPM")
+        print(f"  Respiratory rate: {results.get('respiratory_rate', 'N/A')} RPM")
+    
+    print(f"\n✓ Benchmark complete")
+
+if __name__ == "__main__":
+    benchmark_rpi()
+```
+
+**Expected results on RPi4:**
+- Face detection: 30-40 FPS
+- EVM processing: 1-2 seconds for 200 frames
+- Total end-to-end: 3-4 seconds per measurement
+
+---
+
+## Troubleshooting
+
+### Low FPS (less than 20)
+
+<Steps>
+  <Step title="Check thermal throttling">
+    ```bash
+    vcgencmd measure_temp
+    vcgencmd get_throttled
+    ```
+    Add cooling if temp > 75°C
+  </Step>
+  
+  <Step title="Reduce ROI size">
+    ```python
+    TARGET_ROI_SIZE = (240, 180)  # Even smaller
+    ```
+  </Step>
+  
+  <Step title="Switch to faster detector">
+    ```python
+    detector = FaceDetector(model_type="haar")
+    ```
+  </Step>
+  
+  <Step title="Close background processes">
+    ```bash
+    sudo systemctl stop bluetooth
+    sudo systemctl stop cups
+    ```
+  </Step>
+</Steps>
+
+### High Memory Usage
+
+```python
+# Explicitly release memory after processing
+import gc
+
+results = process_video_evm_vital_signs(frames)
+video_frames = None  # Release frame buffer
+gc.collect()
+```
+
+### Camera Not Found
+
+```bash
+# Check camera permissions
+ls -l /dev/video0
+sudo usermod -a -G video $USER
+
+# Reboot
+sudo reboot
+```
+
+### Import Errors
+
+```bash
+# Reinstall with pre-built wheels
+pip install --upgrade pip
+pip install --only-binary=:all: numpy scipy opencv-python
+```
+
+---
+
+## Related Resources
+
+- [Configuration Guide](/guides/configuration) - Tune RPi-specific parameters
+- [Choosing a Detector](/guides/choosing-detector) - Compare detector performance
+- [Performance Optimization](/guides/performance-optimization) - Advanced tuning
+- [Quick Start Guide](/quick-start) - Initial setup

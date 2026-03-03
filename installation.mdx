@@ -1,0 +1,619 @@
+---
+title: Installation
+description: Detailed installation instructions for Python, Docker, and Raspberry Pi deployment
+---
+
+# Installation
+
+This guide covers multiple installation methods for the EVM Vital Signs Monitor, from standard Python setup to Docker deployment and Raspberry Pi optimization.
+
+## Choose Your Installation Method
+
+<CardGroup cols={3}>
+  <Card title="Python" icon="python">
+    Standard installation using pip
+  </Card>
+  <Card title="Docker" icon="docker">
+    Containerized deployment
+  </Card>
+  <Card title="Raspberry Pi" icon="microchip">
+    Optimized for embedded systems
+  </Card>
+</CardGroup>
+
+## Python Installation
+
+### Prerequisites
+
+<Check>
+- Python 3.8 or higher
+- pip package manager
+- 2GB+ RAM available
+- (Optional) Virtual environment tool
+</Check>
+
+### Step-by-Step Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/your-org/evm-vital-signs-monitor.git
+    cd evm-vital-signs-monitor
+    ```
+  </Step>
+
+  <Step title="Create a virtual environment (recommended)">
+    <CodeGroup>
+    ```bash venv
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+    
+    ```bash conda
+    conda create -n evm-monitor python=3.10
+    conda activate evm-monitor
+    ```
+    </CodeGroup>
+    
+    <Info>
+    Using a virtual environment prevents dependency conflicts with other Python projects.
+    </Info>
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+    
+    This installs the following core packages:
+    
+    <Accordion title="View all dependencies">
+    ```txt requirements.txt
+    mediapipe==0.10.21
+    mtcnn==1.0.0
+    numpy>=1.24.0,<2.0.0
+    opencv-python==4.10.0.84
+    psutil==6.0.0
+    scipy>=1.10.0,<2.0.0
+    ultralytics==8.3.235
+    tensorflow==2.16.1
+    tf-keras==2.16.0
+    pytest
+    ```
+    </Accordion>
+    
+    <Warning>
+    Installation may take 5-15 minutes depending on your system and internet connection. TensorFlow and Ultralytics are large packages.
+    </Warning>
+  </Step>
+
+  <Step title="Verify installation">
+    ```bash
+    # Test imports
+    python -c "import cv2, mediapipe, numpy, scipy; print('✓ All core dependencies installed')"
+    
+    # Run unit tests (optional)
+    cd Python
+    pytest unit_test
+    ```
+  </Step>
+</Steps>
+
+### Platform-Specific Notes
+
+<Tabs>
+  <Tab title="Linux">
+    **Additional system dependencies for OpenCV:**
+    
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get update
+    sudo apt-get install -y ffmpeg libgl1 libglib2.0-0
+    
+    # Fedora/RHEL
+    sudo dnf install -y ffmpeg mesa-libGL glib2
+    ```
+  </Tab>
+  
+  <Tab title="macOS">
+    **Install Homebrew dependencies:**
+    
+    ```bash
+    # Install Homebrew if not already installed
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    
+    # Install system dependencies
+    brew install ffmpeg
+    ```
+    
+    <Note>
+    On Apple Silicon (M1/M2/M3), TensorFlow may require additional configuration. Consider using TensorFlow Metal for GPU acceleration.
+    </Note>
+  </Tab>
+  
+  <Tab title="Windows">
+    **Prerequisites:**
+    
+    - Install [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+    - Ensure Python is added to PATH during installation
+    
+    ```powershell
+    # Verify Python installation
+    python --version
+    
+    # Install dependencies
+    pip install -r requirements.txt
+    ```
+    
+    <Warning>
+    If you encounter SSL certificate errors during pip install, try:
+    ```powershell
+    pip install --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt
+    ```
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Docker Installation
+
+Docker provides a consistent environment across different platforms and simplifies dependency management.
+
+### Prerequisites
+
+<Check>
+- Docker Engine 20.10+ installed
+- Docker Compose (optional, for orchestration)
+- 4GB+ RAM allocated to Docker
+</Check>
+
+### Using the Dockerfile
+
+The project includes a production-ready Dockerfile:
+
+<CodeGroup>
+
+```dockerfile Dockerfile
+FROM tensorflow/tensorflow:2.16.1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY Python ./Python
+WORKDIR /app/Python
+
+CMD ["pytest", "unit_test"]
+```
+
+```bash Build & Run
+# Build the Docker image
+docker build -t evm-vital-signs .
+
+# Run tests
+docker run --rm evm-vital-signs
+
+# Run with video file mounted
+docker run --rm -v /path/to/videos:/data evm-vital-signs \
+  python experiments/simple_run_EVM.py
+
+# Interactive shell
+docker run --rm -it evm-vital-signs bash
+```
+
+</CodeGroup>
+
+### Docker Compose Setup (Optional)
+
+For easier management and development:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  evm-monitor:
+    build: .
+    volumes:
+      - ./Python:/app/Python
+      - ./data:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python experiments/simple_run_EVM.py
+```
+
+```bash
+# Start service
+docker-compose up
+
+# Run specific experiment
+docker-compose run evm-monitor python experiments/simple_run_ROI.py
+```
+
+<Info>
+The Docker image is based on `tensorflow/tensorflow:2.16.1` which provides optimized TensorFlow binaries for better performance.
+</Info>
+
+## Raspberry Pi Installation
+
+Optimized installation for Raspberry Pi 4 (4GB+ RAM recommended).
+
+### Prerequisites
+
+<Check>
+- Raspberry Pi 4 (4GB or 8GB RAM)
+- Raspberry Pi OS 64-bit (Bullseye or later) or Ubuntu Server
+- 16GB+ microSD card (Class 10 or UHS-I)
+- Internet connection
+- (Optional) Raspberry Pi Camera Module v2 or USB webcam
+</Check>
+
+### Step-by-Step Setup
+
+<Steps>
+  <Step title="Update system packages">
+    ```bash
+    sudo apt-get update
+    sudo apt-get upgrade -y
+    ```
+  </Step>
+
+  <Step title="Install system dependencies">
+    ```bash
+    sudo apt-get install -y \
+        python3-pip \
+        python3-venv \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+        libatlas-base-dev \
+        libhdf5-dev \
+        libjpeg-dev \
+        libpng-dev
+    ```
+  </Step>
+
+  <Step title="Increase swap space (recommended)">
+    TensorFlow compilation may require additional swap:
+    
+    ```bash
+    # Edit swap configuration
+    sudo nano /etc/dphys-swapfile
+    
+    # Change CONF_SWAPSIZE to 2048
+    # CONF_SWAPSIZE=2048
+    
+    # Restart swap service
+    sudo /etc/init.d/dphys-swapfile stop
+    sudo /etc/init.d/dphys-swapfile start
+    ```
+  </Step>
+
+  <Step title="Clone repository and setup environment">
+    ```bash
+    cd ~
+    git clone https://github.com/your-org/evm-vital-signs-monitor.git
+    cd evm-vital-signs-monitor
+    
+    # Create virtual environment
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+  </Step>
+
+  <Step title="Install Python dependencies">
+    ```bash
+    # Upgrade pip
+    pip install --upgrade pip
+    
+    # Install dependencies (this may take 20-30 minutes)
+    pip install -r requirements.txt
+    ```
+    
+    <Warning>
+    TensorFlow installation on Raspberry Pi can take 20-30 minutes. Be patient and ensure stable power supply.
+    </Warning>
+  </Step>
+
+  <Step title="Configure for Raspberry Pi">
+    The system automatically detects Raspberry Pi and uses optimized settings from `src/config.py`:
+    
+    ```python src/config.py
+    # Raspberry Pi optimizations
+    LEVELS_RPI = 3  # Reduced pyramid levels for performance
+    TARGET_ROI_SIZE = (320, 240)  # Smaller ROI for faster processing
+    ```
+    
+    For camera setup:
+    ```bash
+    # Enable camera interface
+    sudo raspi-config
+    # Navigate to: Interface Options > Camera > Enable
+    ```
+  </Step>
+
+  <Step title="Test installation">
+    ```bash
+    # Test face detection
+    cd Python/experiments
+    python simple_run_ROI.py
+    ```
+  </Step>
+</Steps>
+
+### Raspberry Pi Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Use MediaPipe" icon="bolt">
+    MediaPipe provides the best speed/accuracy balance on RPi:
+    ```python
+    FaceDetector(model_type='mediapipe')
+    ```
+  </Card>
+  
+  <Card title="Optimize Config" icon="sliders">
+    Reduce computational load:
+    - Lower `TARGET_ROI_SIZE` to (240, 180)
+    - Set `LEVELS_RPI = 2` for faster pyramid processing
+    - Decrease `BUFFER_SIZE` to 150 frames
+  </Card>
+  
+  <Card title="Disable GUI" icon="desktop">
+    Run headless for better performance:
+    ```bash
+    # Boot to console
+    sudo systemctl set-default multi-user.target
+    ```
+  </Card>
+  
+  <Card title="Overclock (Optional)" icon="gauge-high">
+    Safely boost performance in `/boot/config.txt`:
+    ```ini
+    over_voltage=2
+    arm_freq=1750
+    ```
+    Ensure adequate cooling!
+  </Card>
+</CardGroup>
+
+<Warning>
+**Raspberry Pi Limitations:**
+- YOLOv8/v12 models may be too slow for real-time use
+- MTCNN is not recommended due to low FPS
+- Ensure adequate cooling during extended operation
+- Use quality power supply (5V 3A minimum)
+</Warning>
+
+## Verifying Installation
+
+Run these checks to ensure everything is working correctly:
+
+<Tabs>
+  <Tab title="Quick Check">
+    ```bash
+    python -c "
+    import cv2
+    import mediapipe
+    import numpy
+    import scipy
+    print('✓ OpenCV:', cv2.__version__)
+    print('✓ MediaPipe:', mediapipe.__version__)
+    print('✓ NumPy:', numpy.__version__)
+    print('✓ SciPy:', scipy.__version__)
+    print('\nAll dependencies installed successfully!')
+    "
+    ```
+  </Tab>
+  
+  <Tab title="Full Test Suite">
+    ```bash
+    cd Python
+    pytest unit_test -v
+    ```
+    
+    Expected output:
+    ```
+    ======================== test session starts =========================
+    collected 25 items
+    
+    unit_test/test_evm/test_evm_core.py ✓✓✓✓✓        [ 20%]
+    unit_test/test_evm/test_signal_analysis.py ✓✓✓   [ 32%]
+    unit_test/test_face_detector/test_base.py ✓✓    [ 40%]
+    ...
+    ======================== 25 passed in 12.3s =========================
+    ```
+  </Tab>
+  
+  <Tab title="Hardware Test">
+    Test camera access:
+    
+    ```python test_camera.py
+    import cv2
+    
+    # Test default camera
+    cap = cv2.VideoCapture(0)
+    if cap.isOpened():
+        ret, frame = cap.read()
+        if ret:
+            print(f"✓ Camera working! Frame size: {frame.shape}")
+        else:
+            print("✗ Could not read frame")
+        cap.release()
+    else:
+        print("✗ Could not open camera")
+    ```
+    
+    ```bash
+    python test_camera.py
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="TensorFlow installation fails">
+    **On Raspberry Pi:**
+    ```bash
+    # Use pip3 explicitly
+    pip3 install tensorflow==2.16.1
+    
+    # If still failing, try pre-built wheel:
+    pip3 install https://tf.kmtea.eu/whl/stable/tensorflow-2.16.1-cp311-cp311-linux_aarch64.whl
+    ```
+    
+    **On other platforms:**
+    - Ensure Python version is 3.8-3.11 (3.12+ not yet fully supported)
+    - Update pip: `pip install --upgrade pip`
+    - Try installing with `--no-cache-dir` flag
+  </Accordion>
+  
+  <Accordion title="OpenCV import error on Linux">
+    ```bash
+    # Install missing system libraries
+    sudo apt-get install -y libgl1-mesa-glx libglib2.0-0
+    
+    # Verify installation
+    python -c "import cv2; print(cv2.__version__)"
+    ```
+  </Accordion>
+  
+  <Accordion title="MediaPipe not working on Raspberry Pi">
+    MediaPipe requires specific dependencies:
+    ```bash
+    sudo apt-get install -y \
+        libopencv-dev \
+        libopencv-contrib-dev \
+        python3-opencv
+    
+    pip3 install mediapipe==0.10.21
+    ```
+  </Accordion>
+  
+  <Accordion title="Out of memory errors">
+    **Reduce memory usage:**
+    
+    ```python src/config.py
+    # Lower resolution
+    TARGET_ROI_SIZE = (240, 180)  # Instead of (320, 240)
+    
+    # Reduce pyramid levels
+    LEVELS_RPI = 2  # Instead of 3
+    
+    # Smaller buffer
+    BUFFER_SIZE = 150  # Instead of 200
+    ```
+    
+    **On Raspberry Pi:**
+    - Increase swap space (see RPi installation steps)
+    - Close unnecessary applications
+    - Use lightweight desktop environment or run headless
+  </Accordion>
+  
+  <Accordion title="Docker container fails to start">
+    ```bash
+    # Check Docker daemon is running
+    sudo systemctl status docker
+    
+    # Verify sufficient resources
+    docker system df
+    
+    # View container logs
+    docker logs <container-id>
+    
+    # Rebuild from scratch
+    docker build --no-cache -t evm-vital-signs .
+    ```
+  </Accordion>
+  
+  <Accordion title="Camera not detected">
+    **USB Webcam:**
+    ```bash
+    # List video devices
+    ls -l /dev/video*
+    
+    # Test with v4l2
+    v4l2-ctl --list-devices
+    ```
+    
+    **Raspberry Pi Camera:**
+    ```bash
+    # Enable camera
+    sudo raspi-config
+    # Interface Options > Camera > Enable
+    
+    # Test capture
+    raspistill -o test.jpg
+    
+    # For OpenCV, use:
+    # cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Updating the System
+
+To update to the latest version:
+
+```bash
+# Pull latest changes
+git pull origin main
+
+# Update dependencies
+pip install -r requirements.txt --upgrade
+
+# Run tests to verify
+pytest Python/unit_test
+```
+
+## Uninstallation
+
+<Tabs>
+  <Tab title="Virtual Environment">
+    ```bash
+    # Deactivate and remove virtual environment
+    deactivate
+    rm -rf venv
+    
+    # Remove project directory
+    cd ..
+    rm -rf evm-vital-signs-monitor
+    ```
+  </Tab>
+  
+  <Tab title="Docker">
+    ```bash
+    # Remove containers
+    docker-compose down
+    
+    # Remove image
+    docker rmi evm-vital-signs
+    
+    # Remove project directory
+    rm -rf evm-vital-signs-monitor
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Run your first vital signs measurement
+  </Card>
+  <Card title="Configuration Guide" icon="gear" href="/guides/configuration">
+    Customize system parameters for your use case
+  </Card>
+  <Card title="Choose a Detector" icon="brain" href="/guides/choosing-detector">
+    Select the optimal face detection model
+  </Card>
+  <Card title="Raspberry Pi Guide" icon="microchip" href="/guides/raspberry-pi-deployment">
+    Optimize for embedded deployment
+  </Card>
+</CardGroup>
