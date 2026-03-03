@@ -1,0 +1,100 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "EVM Vital Signs Monitor",
+  "projectDescription": "Non-invasive vital signs monitoring system using Eulerian Video Magnification and AI-based facial detection to estimate heart rate and respiratory rate from video.",
+  "theme": "palm",
+  "primaryColor": "#0891B2",
+  "lightColor": "#06B6D4",
+  "darkColor": "#0E7490",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "installation"]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/eulerian-video-magnification",
+              "concepts/signal-processing",
+              "concepts/face-detection"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/configuration",
+              "guides/choosing-detector",
+              "guides/raspberry-pi-deployment",
+              "guides/performance-optimization"
+            ]
+          },
+          {
+            "group": "Benchmarking",
+            "pages": [
+              "benchmarking/overview",
+              "benchmarking/running-benchmarks",
+              "benchmarking/metrics",
+              "benchmarking/dataset"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Face Detection",
+            "pages": [
+              "api/face-detector",
+              "api/mediapipe-detector",
+              "api/yolo-detector",
+              "api/haar-detector",
+              "api/mtcnn-detector"
+            ]
+          },
+          {
+            "group": "EVM Processing",
+            "pages": [
+              "api/evm-manager",
+              "api/evm-core",
+              "api/pyramid-processing",
+              "api/temporal-filtering",
+              "api/signal-analysis"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/config",
+              "api/ground-truth-handler"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Non-invasive HR and RR extraction from video",
+    "Multiple face detection models (YOLOv8, MediaPipe, Haar, MTCNN)",
+    "Optimized single-pass dual-band EVM processing",
+    "Real-time capable on Raspberry Pi 4 (30+ FPS)",
+    "Comprehensive benchmarking with UBFC-RPPG dataset",
+    "ROI stabilization and temporal filtering"
+  ],
+  "publicApiSurface": [
+    "FaceDetector(model_type, **kwargs)",
+    "process_video_evm_vital_signs(video_frames, verbose)",
+    "EVMProcessor.process_dual_band(video_frames)",
+    "calculate_frequency_fft(temporal_signal, fps, lowcut_hz, highcut_hz, min_bpm, max_bpm)",
+    "MediaPipeDetector()",
+    "YOLODetector(preset)",
+    "HaarCascadeDetector()",
+    "MTCNNDetector()",
+    "setup_ground_truth(subject_num, dataset_path, buffer_size)"
+  ]
+}
